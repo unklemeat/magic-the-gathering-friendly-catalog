@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTG Prices — Scryfall API Real-time</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', sans-serif; }
+  
+  /* Custom modal styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+  }
+  .modal-content {
+    max-width: 90%;
+    width: 400px;
+    animation: modal-fade-in 0.3s ease-out;
+  }
+  @keyframes modal-fade-in {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Modal for card details */
+  .card-details-modal {
+    max-width: 800px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* Table sorting icon styles */
+  .sort-icon {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    vertical-align: middle;
+    margin-left: 4px;
+    transition: transform 0.3s;
+  }
+  .sort-asc {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid #374151;
+  }
+  .sort-desc {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #374151;
+  }
+
+  /* Status classes */
+  .bg-status-found { background-color: #d1fae5; }
+  .bg-status-not-found { background-color: #fee2e2; }
+  
+  /* Table styles */
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #E5E7EB; padding: 5px 8px; text-align: left; }
+  
+  /* Mic animation */
+  .mic-listening {
+    animation: pulse-mic 1s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  @keyframes pulse-mic {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+    70% {
+      transform: scale(1.1);
+      box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+  }
+
+  .tab-button.active {
+      @apply bg-white text-gray-900 border-b-2 border-purple-500;
+  }
+  .tab-content.hidden {
+      display: none;
+  }
+
+  /* Table container for responsiveness */
+  .table-container {
+    overflow-x: auto;
+  }
+
+  /* Specific styles for the set select dropdown */
+  .set-select {
+    min-width: 100px;
+  }
+  
+  /* Color symbols */
+  .color-symbol {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    margin: 0 2px;
+    border: 1px solid #333;
+    vertical-align: middle;
+  }
+  .color-w { background-color: #f8f7d9; }
+  .color-u { background-color: #b9d8ee; }
+  .color-b { background-color: #000; } /* Darker black for better contrast */
+  .color-r { background-color: #e99086; }
+  .color-g { background-color: #a7d088; }
+  .color-c { background-color: #d1d1d1; }
+  .color-multi { background-color: #fdd206; border: 1px solid #333; }
+  .color-land { background-color: #f0f0f0; border: 1px solid #333; }
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans transition-colors duration-300">
+
+<nav class="bg-gray-800 text-white p-4 shadow-lg sticky top-0 z-50">
+    <div class="container mx-auto flex justify-between items-center relative">
+        <h1 class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500 cursor-pointer">MTG Prices Pro</h1>
+        <div class="api-status-container flex items-center gap-2">
+            <span id="statusIcon" class="w-3 h-3 rounded-full"></span>
+            <button id="statusBtn" class="bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 font-medium rounded-full text-sm px-5 py-2.5 text-center transition-colors">Ultima Azione</button>
+        </div>
+    </div>
+</nav>
+
+<main class="container mx-auto p-4">
+    <!-- API Status Section (always visible) -->
+    <div id="status-section" class="bg-white rounded-lg shadow-xl p-6 mb-6">
+        <h2 class="text-xl font-bold mb-4">Stato API</h2>
+        <div id="status" class="mt-2 text-sm font-semibold text-gray-500">Pronto per cercare carte</div>
+        <div id="progress" class="mt-4 hidden">
+            <div class="progress-bar rounded-lg overflow-hidden h-4 bg-gray-200">
+                <div class="progress-fill h-full bg-emerald-500 transition-all duration-300" id="progressFill"></div>
+            </div>
+            <span id="progressText" class="text-sm mt-1 block">Elaborazione...</span>
+        </div>
+    </div>
+
+    <!-- Tabbed Interface -->
+    <div class="bg-white rounded-lg shadow-xl p-6 mb-6">
+        <div class="flex border-b border-gray-200">
+            <button class="tab-button active py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="search-tab">Cerca Carta</button>
+            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="csv-tab">Carica CSV</button>
+            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="data-tab">Gestisci Dati</button>
+        </div>
+        
+        <div id="search-tab" class="tab-content pt-4">
+            <h2 class="text-xl font-bold mb-4">Cerca una singola carta</h2>
+            <div class="flex flex-col md:flex-row items-stretch gap-4">
+                <div class="relative flex-grow flex items-center">
+                    <input type="text" id="cardNameInput" placeholder="Inserisci il nome della carta o parla..." class="flex-grow p-3 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors" />
+                    <button id="voiceSearchBtn" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" title="Riconoscimento vocale supportato solo su alcuni browser">
+                        <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-gray-600">
+                            <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
+                            <path d="M15.75 17.25a.75.75 0 0 1-.75.75h-7.5a.75.75 0 0 1-.75-.75.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 .75.75ZM9.75 17.25a.75.75 0 0 1-.75-.75V12a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-.75.75h-4.5Z" />
+                            <path d="M12 20.25a4.5 4.5 0 0 0 4.5-4.5V12a.75.75 0 0 1 1.5 0v3.75a6 6 0 0 1-12 0V12a.75.75 0 0 1 1.5 0v3.75a4.5 4.5 0 0 0 4.5 4.5Z" />
+                        </svg>
+                        <span id="mic-unsupported-icon" class="absolute inset-0 flex items-center justify-center text-red-500 font-bold text-xl hidden">/</span>
+                    </button>
+                </div>
+                <button id="searchCardBtn" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105">Cerca & Aggiungi</button>
+            </div>
+        </div>
+        
+        <div id="csv-tab" class="tab-content pt-4 hidden">
+            <h2 class="text-xl font-bold mb-4">Carica CSV con elenco carte</h2>
+            <input type="file" id="csvFile" accept=".csv,text/csv" class="w-full mb-2 text-gray-800 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 transition-colors" />
+            <button id="processCsv" class="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105">Elabora CSV</button>
+        </div>
+        
+        <div id="data-tab" class="tab-content pt-4 hidden">
+            <h2 class="text-xl font-bold mb-4">Gestisci i dati</h2>
+            <div class="flex flex-col md:flex-row gap-4">
+                <button id="saveJsonBtn" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105">Salva come JSON</button>
+                <label for="loadJsonFile" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105 text-center cursor-pointer">Carica da JSON</label>
+                <input type="file" id="loadJsonFile" accept=".json,application/json" class="hidden" />
+            </div>
+        </div>
+    </div>
+    
+    <!-- Results section (always visible) -->
+    <div class="bg-white rounded-lg shadow-xl p-6">
+        <h2 class="text-xl font-bold mb-4">Risultati</h2>
+        <div class="table-container">
+            <table id="resultsTable" class="w-full rounded-lg">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="py-3 px-4 rounded-tl-lg border">#</th>
+                        <th class="py-3 px-4 border">Immagine</th>
+                        <th class="py-3 px-4 sortable border" data-sort="ita-name">Nome ITA<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="eng-name">Nome ENG<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="color">Colore<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="set">Set<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="eur-price">Prezzo EUR<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="usd-price">Prezzo USD<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 border">Dettagli</th>
+                        <th class="py-3 px-4 rounded-tr-lg border">Azione</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</main>
+
+<!-- Generic Modal -->
+<div id="customModal" class="modal-overlay hidden">
+  <div class="modal-content bg-gray-100 rounded-xl p-6 shadow-2xl">
+    <p id="modalMessage" class="text-lg text-gray-800 mb-6 text-center"></p>
+    <div id="modalButtons" class="flex justify-center gap-4">
+      <button id="modalOkBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">OK</button>
+      <button id="modalCancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors hidden">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- Card Details Modal -->
+<div id="cardDetailsModal" class="modal-overlay hidden">
+  <div class="card-details-modal bg-gray-800 rounded-xl p-6 shadow-2xl relative">
+    <button id="closeDetailsModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+        <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+      </svg>
+    </button>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <div id="cardImageContainer" class="flex flex-col gap-4">
+            <!-- Card images will be inserted here -->
+        </div>
+        <div>
+            <h3 id="cardNameInModal" class="text-xl font-bold text-white mb-2"></h3>
+            <p id="cardDescriptionInModal" class="text-gray-300 text-sm whitespace-pre-wrap"></p>
+        </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const SCRYFALL_API = "https://api.scryfall.com";
+let allSets = [];
+let searchResults = []; // Global array to store all results
+
+// Table sorting variables
+let currentSort = { column: null, direction: 'asc' };
+
+// API status variable
+let apiStatus = 'connecting';
+
+// Scryfall rate limiting logic (max 10 reqs per second)
+let requestQueue = [];
+let isProcessing = false;
+async function rateLimitedRequest(url) {
+  return new Promise((resolve) => {
+    requestQueue.push({ url, resolve });
+    processQueue();
+  });
+}
+
+async function processQueue() {
+  if (isProcessing || requestQueue.length === 0) return;
+  
+  isProcessing = true;
+  while (requestQueue.length > 0) {
+    const { url, resolve } = requestQueue.shift();
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      resolve(data);
+    } catch (error) {
+      console.error("API Error:", error);
+      resolve(null);
+    }
+    // Wait 150ms between requests for safety margin
+    await new Promise(r => setTimeout(r, 150));
+  }
+  isProcessing = false;
+}
+
+// Function to update the visual API status
+function updateApiStatus(status, message) {
+    const statusIcon = document.getElementById('statusIcon');
+    const statusBtn = document.getElementById('statusBtn');
+
+    apiStatus = status;
+
+    if (status === 'ready') {
+        statusIcon.className = 'w-3 h-3 rounded-full bg-emerald-500';
+        statusBtn.textContent = 'API OK';
+    } else if (status === 'error') {
+        statusIcon.className = 'w-3 h-3 rounded-full bg-red-500';
+        statusBtn.textContent = 'API Errore';
+    } else { // connecting
+        statusIcon.className = 'w-3 h-3 rounded-full bg-yellow-500 animate-pulse';
+        statusBtn.textContent = 'API Connessione...';
+    }
+
+    if (message) {
+        document.getElementById("status").textContent = message;
+    }
+}
+
+// Fetch all sets from Scryfall on app startup
+async function fetchSets() {
+  updateApiStatus('connecting', "Caricamento set di Magic in corso...");
+  try {
+    const response = await rateLimitedRequest(`${SCRYFALL_API}/sets`);
+    if (response && response.data) {
+      // Sort sets by release date, from newest to oldest
+      allSets = response.data.sort((a, b) => new Date(b.released_at) - new Date(a.released_at));
+      updateApiStatus('ready', `Pronto per cercare carte. Caricati ${allSets.length} set.`);
+    } else {
+      updateApiStatus('error', "Errore nel caricamento dei set. Ricarica la pagina.");
+    }
+  } catch (error) {
+    console.error("Sets loading error:", error);
+    updateApiStatus('error', "Errore nel caricamento dei set. Ricarica la pagina.");
+  }
+}
+
+// Normalize card name by removing special characters and accents
+function normalizeName(name) {
+  return name.toLowerCase()
+    .replace(/[àáâãäå]/g, 'a')
+    .replace(/[èéêë]/g, 'e')
+    .replace(/[ìíîï]/g, 'i')
+    .replace(/[òóôõöø]/g, 'o')
+    .replace(/[ùúûü]/g, 'u')
+    .replace(/[ç]/g, 'c')
+    .replace(/[ñ]/g, 'n')
+    .replace(/[^a-z0-9\s\-'"]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Capitalize the first letter of each word
+function capitalizeWords(str) {
+  return str.split(' ').map(word => {
+    if (word.length > 0) {
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }
+    return '';
+  }).join(' ');
+}
+
+// Two-step search logic: find names, then prints
+async function findCardWithAPI(csvCard) {
+  // Normalize and capitalize the name for a more reliable search
+  const formattedName = capitalizeWords(csvCard.name);
+  console.log(`🔍 API search for "${formattedName}"`);
+
+  try {
+    // Step 1: Search the main card to get definitive ITA and ENG names
+    const namedSearchUrl = `${SCRYFALL_API}/cards/named?fuzzy=${encodeURIComponent(formattedName)}`;
+    const namedResult = await rateLimitedRequest(namedSearchUrl);
+
+    if (namedResult && namedResult.object === "card") {
+      const cardEngName = namedResult.name;
+      const cardItaName = namedResult.printed_name || namedResult.name;
+      const oracleId = namedResult.oracle_id;
+
+      // Step 2: Search all prints based on the oracle ID
+      const allPrintsSearchUrl = `${SCRYFALL_API}/cards/search?q=oracleid%3A${oracleId}&unique=prints&order=released`;
+      const allPrintsResult = await rateLimitedRequest(allPrintsSearchUrl);
+
+      if (allPrintsResult && allPrintsResult.data && allPrintsResult.data.length > 0) {
+        console.log(`✅ Found ${allPrintsResult.data.length} prints for "${cardEngName}" using oracleid.`);
+        
+        let selectedPrint = allPrintsResult.data[0];
+        // If a set was specified in the CSV, try to find that specific print
+        if (csvCard.set) {
+            const specifiedPrint = allPrintsResult.data.find(p => p.set.toLowerCase() === csvCard.set.toLowerCase());
+            if (specifiedPrint) {
+                selectedPrint = specifiedPrint;
+            }
+        }
+
+        return {
+          cardPrints: allPrintsResult.data,
+          cardEngName: cardEngName,
+          cardItaName: cardItaName,
+          strategy: 'full-search',
+          selectedPrintId: selectedPrint.id, // Save the ID of the selected print
+          colors: selectedPrint.colors || [],
+          type_line: selectedPrint.type_line
+        };
+      } else {
+        console.log(`⚠️ No prints found for "${cardEngName}" using oracleid.`);
+        return { cardPrints: [], strategy: 'not-found', cardEngName: cardEngName, cardItaName: cardItaName, selectedPrintId: null };
+      }
+    } else {
+      console.log(`❌ No result found for "${formattedName}".`);
+      return { cardPrints: [], strategy: 'not-found', cardEngName: null, cardItaName: null, selectedPrintId: null };
+    }
+  } catch (error) {
+    console.error(`❌ API error for "${formattedName}":`, error);
+    return { cardPrints: [], strategy: 'api-error', cardEngName: null, cardItaName: null, selectedPrintId: null };
+  }
+}
+
+// Calculate and update the total EUR prices
+function recalculateTotal() {
+  const priceCells = document.querySelectorAll('#resultsTable .price-eur');
+  let totalEUR = 0;
+  priceCells.forEach(cell => {
+    const priceText = cell.textContent;
+    if (priceText && priceText !== "—") {
+      const price = parseFloat(priceText.replace(' €', '').replace(',', '.'));
+      if (!isNaN(price)) {
+        totalEUR += price;
+      }
+    }
+  });
+
+  const totalRowCell = document.querySelector('#resultsTable .total-eur-cell');
+  if (totalRowCell) {
+    totalRowCell.textContent = `€${totalEUR.toFixed(2)}`;
+  }
+}
+
+// Update prices when the set is changed in the dropdown menu
+function updatePrices(selectElement, index) {
+  const selectedPrintId = selectElement.value;
+  const result = searchResults[index].result;
+  const selectedPrint = result.cardPrints.find(p => p.id === selectedPrintId);
+  
+  if (selectedPrint) {
+    const eurCell = document.querySelector(`#resultsTable tbody tr:nth-child(${index + 1}) .price-eur`);
+    const usdCell = document.querySelector(`#resultsTable tbody tr:nth-child(${index + 1}) .price-usd`);
+    const imgCell = document.querySelector(`#resultsTable tbody tr:nth-child(${index + 1}) .card-img`);
+    const colorCell = document.querySelector(`#resultsTable tbody tr:nth-child(${index + 1}) .color-cell`);
+
+    const prices = selectedPrint.prices;
+    const imageUrl = selectedPrint.image_uris?.small || 'https://placehold.co/50x70/E5E7EB/6B7280?text=No+Image';
+    
+    eurCell.textContent = prices.eur ? `${prices.eur} €` : "—";
+    usdCell.textContent = prices.usd ? `${prices.usd} $` : "—";
+    imgCell.src = imageUrl;
+    colorCell.innerHTML = getColorsHtml(selectedPrint.colors, selectedPrint.type_line);
+    
+    // Update the selected ID in the global array
+    result.selectedPrintId = selectedPrintId;
+    
+    recalculateTotal();
+  }
+}
+
+// Parse the CSV file (only the first column with the name)
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  const rows = [];
+  for (const line of lines) {
+    const separator = line.includes(';') ? ';' : ',';
+    const parts = line.split(separator);
+    if (parts.length >= 1) {
+      rows.push({ 
+        name: parts[0].trim(), 
+        set: parts[1] ? parts[1].trim() : '' // Handle missing set
+      });
+    }
+  }
+  return rows;
+}
+
+// Function to get the HTML for color symbols
+function getColorsHtml(colors, cardType) {
+    const colorMap = {
+      'W': 'Bianco', 'U': 'Blu', 'B': 'Nero', 'R': 'Rosso', 'G': 'Verde'
+    };
+    if (colors.length === 0) {
+        if (cardType && cardType.includes("Land")) {
+            return `<span class="color-land color-symbol" title="Terra"></span>`;
+        }
+        return `<span class="color-c color-symbol" title="Incolore"></span>`;
+    }
+    if (colors.length > 1) {
+        return `<span class="color-multi color-symbol" title="Multicolore"></span>`;
+    }
+    const colorCode = colors[0];
+    const colorClass = `color-${colorCode.toLowerCase()}`;
+    const colorName = colorMap[colorCode];
+    return `<span class="${colorClass} color-symbol" title="${colorName}"></span>`;
+}
+
+// Sorting function for the global results array
+function sortResults(column, direction) {
+  searchResults.sort((a, b) => {
+    let aVal, bVal;
+
+    // Get the correct value for sorting based on the column
+    const getSortValue = (item, col) => {
+        const result = item.result;
+        const selectedPrint = result.cardPrints?.find(p => p.id === result.selectedPrintId) || result.cardPrints?.[0];
+
+        switch(col) {
+            case 'ita-name':
+                return result.cardItaName || '';
+            case 'eng-name':
+                return result.cardEngName || '';
+            case 'set':
+                return selectedPrint ? allSets.find(s => s.code === selectedPrint.set)?.name_it || selectedPrint.set_name || '' : '';
+            case 'color':
+                return selectedPrint ? selectedPrint.colors.join('') : '';
+            case 'eur-price':
+                return parseFloat(selectedPrint?.prices?.eur) || 0;
+            case 'usd-price':
+                return parseFloat(selectedPrint?.prices?.usd) || 0;
+            default:
+                return 0;
+        }
+    };
+    
+    aVal = getSortValue(a, column);
+    bVal = getSortValue(b, column);
+    
+    // Compare values based on direction
+    if (typeof aVal === 'string') {
+      return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    } else { // Numeric
+      return direction === 'asc' ? aVal - bVal : bVal - aVal;
+    }
+  });
+}
+
+// Handler for deleting a row with confirmation
+async function handleDeleteRow(indexToDelete) {
+  const userConfirmed = await showModal("Sei sicuro di voler eliminare questa carta?", true);
+  if (!userConfirmed) {
+    return;
+  }
+  // Remove the item from the searchResults array
+  searchResults.splice(indexToDelete, 1);
+  // Redraw the table
+  renderResults();
+}
+
+// Generate the entire results table based on the searchResults array
+function renderResults() {
+  const tbody = document.querySelector("#resultsTable tbody");
+  tbody.innerHTML = "";
+  
+  searchResults.forEach((result, i) => {
+    const r = result.result;
+    const tr = document.createElement("tr");
+
+    // Define Tailwind classes based on theme and status
+    const rowClasses = r.strategy === 'not-found' || r.strategy === 'api-error' || r.cardPrints.length === 0
+      ? 'bg-status-not-found'
+      : 'bg-status-found';
+
+    tr.className = rowClasses;
+
+    // Create standard cells for each row
+    const numCell = document.createElement('td');
+    numCell.textContent = i + 1;
+    tr.appendChild(numCell);
+
+    const imgCell = document.createElement('td');
+    const itaNameCell = document.createElement('td');
+    const engNameCell = document.createElement('td');
+    const colorCell = document.createElement('td');
+    const setCell = document.createElement('td');
+    const eurPriceCell = document.createElement('td');
+    const usdPriceCell = document.createElement('td');
+    const detailsCell = document.createElement('td');
+    const deleteCell = document.createElement('td');
+    
+    colorCell.className = "color-cell";
+
+    // Create the delete button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.className = "bg-red-600 hover:bg-red-700 text-white font-semibold py-1 px-2 rounded-full text-xs delete-btn shadow-md transition-colors hover:shadow-lg";
+    deleteBtn.textContent = "Elimina";
+    deleteBtn.dataset.index = i;
+    deleteBtn.addEventListener('click', () => handleDeleteRow(i));
+    deleteCell.appendChild(deleteBtn);
+
+    // Create the details button
+    const detailsBtn = document.createElement('button');
+    detailsBtn.className = "bg-purple-600 hover:bg-purple-700 text-white font-semibold py-1 px-2 rounded-full text-xs details-btn shadow-md transition-colors hover:shadow-lg";
+    detailsBtn.textContent = "Dettagli";
+    detailsBtn.dataset.index = i;
+    detailsBtn.addEventListener('click', () => showCardDetailsModal(i));
+    detailsCell.appendChild(detailsBtn);
+
+    
+    if (r.strategy === 'not-found' || r.strategy === 'api-error' || r.cardPrints.length === 0) {
+      imgCell.innerHTML = "—";
+      itaNameCell.textContent = "—";
+      engNameCell.textContent = "—";
+      colorCell.innerHTML = "—";
+      setCell.textContent = "—";
+      eurPriceCell.textContent = "—";
+      usdPriceCell.textContent = "—";
+      detailsCell.innerHTML = "—";
+    } else {
+      const cardPrints = r.cardPrints;
+      const selectedPrint = cardPrints.find(p => p.id === r.selectedPrintId) || cardPrints[0];
+      
+      // Image
+      const img = document.createElement('img');
+      const imageUrl = selectedPrint.image_uris?.small || 'https://placehold.co/50x70/E5E7EB/6B7280?text=No+Image';
+      img.src = imageUrl;
+      img.alt = `Immagine di ${selectedPrint.name}`;
+      img.className = "w-12 h-16 rounded-sm shadow-md card-img";
+      imgCell.appendChild(img);
+
+      const selectEl = document.createElement('select');
+      selectEl.className = 'w-full p-1 rounded-md border border-gray-300 bg-gray-50 set-select';
+      
+      cardPrints.forEach(print => {
+          const option = document.createElement('option');
+          const setItaName = allSets.find(s => s.code === print.set)?.name_it || print.set_name || "—";
+          option.textContent = `${setItaName} (${print.set.toUpperCase()})`;
+          option.value = print.id;
+          if(print.id === r.selectedPrintId) {
+            option.selected = true;
+          }
+          selectEl.appendChild(option);
+      });
+
+      selectEl.addEventListener('change', (e) => {
+          updatePrices(e.target, i);
+      });
+      
+      itaNameCell.textContent = r.cardItaName;
+      engNameCell.textContent = r.cardEngName;
+      colorCell.innerHTML = getColorsHtml(selectedPrint.colors, selectedPrint.type_line);
+      setCell.appendChild(selectEl);
+      eurPriceCell.className = 'price-eur';
+      usdPriceCell.className = 'price-usd';
+      const initialPrices = selectedPrint.prices || {};
+      eurPriceCell.textContent = initialPrices.eur ? `${initialPrices.eur} €` : "—";
+      usdPriceCell.textContent = initialPrices.usd ? `${initialPrices.usd} $` : "—";
+    }
+    
+    tr.appendChild(imgCell);
+    tr.appendChild(itaNameCell);
+    tr.appendChild(engNameCell);
+    tr.appendChild(colorCell);
+    tr.appendChild(setCell);
+    tr.appendChild(eurPriceCell);
+    tr.appendChild(usdPriceCell);
+    tr.appendChild(detailsCell);
+    tr.appendChild(deleteCell);
+
+    tbody.appendChild(tr);
+  });
+  
+  // Total row
+  const totalRow = document.createElement("tr");
+  totalRow.style.fontWeight = "bold";
+  totalRow.className = "bg-purple-200";
+  totalRow.innerHTML = `
+    <td colspan="7" class="rounded-bl-lg border">TOTALE (solo carte con prezzo in EUR)</td>
+    <td class="total-eur-cell border">€0.00</td>
+    <td class="rounded-br-lg border" colspan="2"></td>
+  `;
+  tbody.appendChild(totalRow);
+  recalculateTotal();
+}
+
+// Logic for the generic modal
+const modalOverlay = document.getElementById('customModal');
+const modalMessage = document.getElementById('modalMessage');
+const modalOkBtn = document.getElementById('modalOkBtn');
+const modalCancelBtn = document.getElementById('modalCancelBtn');
+
+function showModal(message, isConfirmation = false) {
+  modalMessage.textContent = message;
+  modalCancelBtn.classList.toggle('hidden', !isConfirmation);
+  modalOverlay.classList.remove('hidden');
+
+  return new Promise((resolve) => {
+    const handleOk = () => {
+      modalOverlay.classList.add('hidden');
+      modalOkBtn.removeEventListener('click', handleOk);
+      modalCancelBtn.removeEventListener('click', handleCancel);
+      resolve(true);
+    };
+
+    const handleCancel = () => {
+      modalOverlay.classList.add('hidden');
+      modalOkBtn.removeEventListener('click', handleOk);
+      modalCancelBtn.removeEventListener('click', handleCancel);
+      resolve(false);
+    };
+
+    modalOkBtn.addEventListener('click', handleOk);
+    modalCancelBtn.addEventListener('click', handleCancel);
+  });
+}
+
+// Logic for the card details modal
+const cardDetailsModal = document.getElementById('cardDetailsModal');
+const closeDetailsModalBtn = document.getElementById('closeDetailsModalBtn');
+const cardImageContainer = document.getElementById('cardImageContainer');
+const cardNameInModal = document.getElementById('cardNameInModal');
+const cardDescriptionInModal = document.getElementById('cardDescriptionInModal');
+
+function showCardDetailsModal(index) {
+    const result = searchResults[index].result;
+    const selectedPrint = result.cardPrints.find(p => p.id === result.selectedPrintId) || result.cardPrints[0];
+
+    if (!selectedPrint) {
+        showModal("Dettagli della carta non disponibili.");
+        return;
+    }
+
+    // Clear previous content
+    cardImageContainer.innerHTML = '';
+    cardDescriptionInModal.textContent = '';
+    cardNameInModal.textContent = '';
+
+    cardNameInModal.textContent = selectedPrint.name;
+
+    // Check for card faces (for double-sided cards)
+    if (selectedPrint.card_faces) {
+        selectedPrint.card_faces.forEach(face => {
+            if (face.image_uris && face.image_uris.normal) {
+                const img = document.createElement('img');
+                img.src = face.image_uris.normal;
+                img.alt = face.name;
+                img.className = "w-full rounded-xl shadow-lg";
+                cardImageContainer.appendChild(img);
+            }
+            if (face.oracle_text) {
+                cardDescriptionInModal.textContent += `\n\n${face.oracle_text}`;
+            }
+        });
+        cardDescriptionInModal.textContent = cardDescriptionInModal.textContent.trim();
+    } else {
+        // Single-faced card
+        if (selectedPrint.image_uris && selectedPrint.image_uris.normal) {
+            const img = document.createElement('img');
+            img.src = selectedPrint.image_uris.normal;
+            img.alt = selectedPrint.name;
+            img.className = "w-full rounded-xl shadow-lg";
+            cardImageContainer.appendChild(img);
+        }
+        if (selectedPrint.oracle_text) {
+            cardDescriptionInModal.textContent = selectedPrint.oracle_text;
+        }
+    }
+    
+    cardDetailsModal.classList.remove('hidden');
+}
+
+closeDetailsModalBtn.addEventListener('click', () => {
+    cardDetailsModal.classList.add('hidden');
+});
+
+// Function to save results as a JSON file
+function saveAsJson() {
+  const jsonString = JSON.stringify(searchResults, null, 2);
+  const blob = new Blob([jsonString], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'mtg_prices.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  showModal("Dati salvati in mtg_prices.json!");
+}
+
+// Function to load results from a JSON file
+function loadFromJson(file) {
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data)) {
+        throw new Error("Il file JSON non contiene un array valido.");
+      }
+      
+      searchResults = data;
+      renderResults();
+      await showModal(`Caricate ${searchResults.length} carte da file.`);
+    } catch (error) {
+      console.error("Errore nel caricamento del file JSON:", error);
+      await showModal(`Errore nel caricamento del file: ${error.message}`);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// UI Events
+document.getElementById("searchCardBtn").addEventListener("click", async () => {
+  const cardNameInput = document.getElementById("cardNameInput");
+  const cardName = cardNameInput.value.trim();
+  
+  if (!cardName) {
+    await showModal("Per favore, inserisci un nome di carta.");
+    return;
+  }
+  
+  document.getElementById("status").textContent = `Ricerca per "${cardName}" in corso...`;
+  
+  // Normalize and capitalize before sending to the function
+  const formattedCardName = capitalizeWords(cardName);
+  const result = await findCardWithAPI({ name: formattedCardName });
+  searchResults.push({ input: { name: formattedCardName }, result });
+  renderResults();
+  
+  cardNameInput.value = ''; // Clear the input field
+  document.getElementById("status").textContent = `✅ Ricerca completata per "${formattedCardName}"!`;
+});
+
+document.getElementById("processCsv").addEventListener("click", async () => {
+  try {
+    const file = document.getElementById("csvFile").files[0];
+    if (!file) {
+      await showModal("Seleziona un file CSV.");
+      return;
+    }
+    
+    const text = await file.text();
+    const rows = parseCSV(text);
+    
+    if (rows.length > 50) {
+      const userConfirmed = await showModal(`Trovate ${rows.length} carte. Questo richiederà molte chiamate API. Vuoi continuare?`, true);
+      if (!userConfirmed) {
+        return;
+      }
+    }
+    
+    console.log(`📋 Processing ${rows.length} cards via API...`);
+    
+    const progressEl = document.getElementById("progress");
+    const progressFill = document.getElementById("progressFill");
+    const progressText = document.getElementById("progressText");
+    
+    progressEl.classList.remove("hidden");
+    document.getElementById("status").textContent = "Elaborazione in corso...";
+    
+    const newResults = [];
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      progressFill.style.width = `${((i + 1) / rows.length) * 100}%`;
+      progressText.textContent = `Elaborando ${i + 1}/${rows.length}: ${row.name}`;
+      
+      const result = await findCardWithAPI(row);
+      newResults.push({ input: row, result });
+    }
+
+    searchResults = searchResults.concat(newResults);
+    
+    progressEl.classList.add("hidden");
+    document.getElementById("status").textContent = "✅ Elaborazione completata!";
+    
+    renderResults();
+    
+  } catch (error) {
+    document.getElementById("status").textContent = `❌ Errore: ${error.message}`;
+    document.getElementById("progress").classList.add("hidden");
+    console.error(error);
+  }
+});
+
+// Event listener for table sorting
+document.getElementById('resultsTable').addEventListener('click', (e) => {
+  const th = e.target.closest('th');
+  if (!th || !th.classList.contains('sortable')) {
+    return;
+  }
+
+  const column = th.dataset.sort;
+  
+  if (currentSort.column === column) {
+    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+  } else {
+    currentSort.column = column;
+    currentSort.direction = 'asc';
+  }
+
+  // Remove sorting icons from all headers
+  document.querySelectorAll('.sort-icon').forEach(icon => {
+    icon.classList.remove('sort-asc', 'sort-desc');
+  });
+
+  // Add sorting icon to the current header
+  const icon = th.querySelector('.sort-icon');
+  if (icon) {
+    icon.classList.add(currentSort.direction === 'asc' ? 'sort-asc' : 'sort-desc');
+  }
+
+  sortResults(currentSort.column, currentSort.direction);
+  renderResults();
+});
+
+// New event listeners for JSON buttons
+document.getElementById('saveJsonBtn').addEventListener('click', saveAsJson);
+document.getElementById('loadJsonFile').addEventListener('change', (e) => {
+  if (e.target.files.length > 0) {
+    loadFromJson(e.target.files[0]);
+    e.target.value = ''; // Reset file input to allow loading the same file again
+  }
+});
+
+// Add logic for voice recognition
+const voiceSearchBtn = document.getElementById('voiceSearchBtn');
+const cardNameInput = document.getElementById('cardNameInput');
+const micIcon = document.getElementById('mic-icon');
+const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
+
+// Check for Web Speech API support
+if ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window) {
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'it-IT';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+
+  voiceSearchBtn.addEventListener('click', () => {
+    if (voiceSearchBtn.disabled) return;
+    try {
+        recognition.start();
+    } catch (e) {
+        console.error(e);
+        showModal("Il riconoscimento vocale è già in esecuzione o si è verificato un errore.");
+    }
+  });
+
+  recognition.onstart = () => {
+    document.getElementById('status').textContent = 'Ascolto... pronuncia il nome della carta.';
+    micIcon.classList.add('mic-listening');
+  };
+
+  recognition.onresult = (event) => {
+    const transcript = event.results[event.results.length - 1][0].transcript;
+    cardNameInput.value = capitalizeWords(transcript.trim());
+    document.getElementById('searchCardBtn').click(); // Start the search
+  };
+  
+  recognition.onend = () => {
+    micIcon.classList.remove('mic-listening');
+    document.getElementById('status').textContent = `Ricerca vocale completata.`;
+  };
+
+  recognition.onerror = (event) => {
+    document.getElementById('status').textContent = `Errore di riconoscimento vocale: ${event.error}`;
+    console.error('Voice recognition error:', event.error);
+    showModal(`Si è verificato un errore nel riconoscimento vocale: ${event.error}`);
+    micIcon.classList.remove('mic-listening');
+  };
+} else {
+    // If Web Speech API is not supported, disable the button and show the crossed-out icon
+    voiceSearchBtn.disabled = true;
+    micUnsupportedIcon.classList.remove('hidden');
+    console.warn("Your browser does not support the Web Speech API.");
+}
+
+// Logic for tabs
+document.querySelectorAll('.tab-button').forEach(button => {
+    button.addEventListener('click', (e) => {
+        // Remove 'active' class from all buttons and hide all content
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'border-b-2'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+
+        // Add 'active' class to the clicked button and show corresponding content
+        e.target.classList.add('active');
+        const tabId = e.target.dataset.tab;
+        document.getElementById(tabId).classList.remove('hidden');
+    });
+});
+
+// Event listener for the API status button
+document.getElementById('statusBtn').addEventListener('click', () => {
+    let message = '';
+    if (apiStatus === 'ready') {
+        message = 'Connessione API Scryfall riuscita. Pronto all\'uso.';
+    } else if (apiStatus === 'error') {
+        message = 'Errore di connessione con l\'API Scryfall. Riprova a ricaricare la pagina.';
+    } else {
+        message = 'Connessione in corso. In attesa di risposta da Scryfall.';
+    }
+    showModal(message);
+});
+
+// Start fetching sets on app load
+window.addEventListener('load', () => {
+    fetchSets();
+});
+</script>
+</body>
+</html>
