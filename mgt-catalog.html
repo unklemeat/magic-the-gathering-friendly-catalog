@@ -185,7 +185,7 @@
     <div class="bg-white rounded-lg shadow-xl p-6 mb-6">
         <div class="flex border-b border-gray-200">
             <button class="tab-button active py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="search-tab" data-lang-key="tabSearch">Cerca Carta</button>
-            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="decks-tab" data-lang-key="tabDecks">Decks / Mazzi</button>
+            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="decks-tab" data-lang-key="tabDecks">Mazzi</button>
             <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="explore-tab" data-lang-key="tabExplore">Esplora Espansioni</button>
             <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="csv-tab" data-lang-key="tabCsv">Carica CSV</button>
             <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="data-tab" data-lang-key="tabData">Gestisci Dati</button>
@@ -408,37 +408,73 @@ let decks = [];
 let currentDeck = null;
 let currentDeckId = null;
 
+
+// --- CONFIGURAZIONE FIREBASE PER ESECUZIONE LOCALE ---
+// Per eseguire questo file al di fuori di Canvas (es. aprendolo in Chrome),
+// devi inserire qui la tua configurazione personale di Firebase.
+// 1. Vai su https://console.firebase.google.com/ e crea un nuovo progetto.
+// 2. Nelle impostazioni del progetto (icona ingranaggio), crea una "Web App".
+// 3. Copia l'oggetto di configurazione (inizia con "const firebaseConfig = {") e incollalo qui sotto,
+//    sostituendo l'oggetto 'localFirebaseConfig'.
+const localFirebaseConfig = {
+    // Esempio:
+    // apiKey: "AIzaSy...",
+    // authDomain: "tuo-progetto.firebaseapp.com",
+    // projectId: "tuo-progetto",
+    // storageBucket: "tuo-progetto.appspot.com",
+    // messagingSenderId: "1234567890",
+    // appId: "1:1234567890:web:..."
+};
+
+
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : localFirebaseConfig;
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-if (Object.keys(firebaseConfig).length > 0) {
+// Controlla se la configurazione di Firebase è valida
+if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
     const app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     auth = getAuth(app);
     
+    // Esegui l'autenticazione
     if (initialAuthToken) {
         signInWithCustomToken(auth, initialAuthToken).catch(error => {
             console.error("Error signing in with custom token:", error);
-            signInAnonymously(auth);
+            signInAnonymously(auth); // Fallback ad anonimo se il token non è valido
         });
     } else {
         signInAnonymously(auth);
     }
     
+    // Listener per i cambiamenti di stato dell'autenticazione
     onAuthStateChanged(auth, async (user) => {
         if (user) {
             userId = user.uid;
             console.log("User authenticated:", userId);
             
-            // Set up real-time listeners for decks and collection
+            // Imposta i listener in tempo reale per mazzi e collezione
             const decksQuery = query(collection(db, `artifacts/${appId}/users/${userId}/decks`));
             onSnapshot(decksQuery, (snapshot) => {
                 decks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 console.log("Decks loaded:", decks);
                 const currentTab = document.querySelector('.tab-button.active').dataset.tab;
+                
                 if (currentTab === 'decks-tab') {
-                    renderDecksList();
+                    const deckEditor = document.getElementById('deck-editor');
+                    if (!deckEditor.classList.contains('hidden') && currentDeckId) {
+                        const updatedDeck = decks.find(d => d.id === currentDeckId);
+                        if (updatedDeck) {
+                            currentDeck = updatedDeck;
+                            renderDeckCards();
+                        } else {
+                            document.getElementById('decks-list').classList.remove('hidden');
+                            deckEditor.classList.add('hidden');
+                            renderDecksList();
+                        }
+                    } else {
+                        renderDecksList();
+                    }
                 }
             });
 
@@ -454,12 +490,20 @@ if (Object.keys(firebaseConfig).length > 0) {
             
         } else {
             console.log("No user authenticated.");
+            userId = null;
         }
     });
 
 } else {
-    console.error("Firebase config is missing. The app will not function correctly.");
+    // Se la configurazione manca, mostra un messaggio di errore chiaro
+    document.body.innerHTML = `<div class="p-8 text-center bg-red-100 text-red-800">
+        <h1 class="text-2xl font-bold">Errore di Configurazione</h1>
+        <p class="mt-2">Configurazione di Firebase non trovata.</p>
+        <p>Se stai eseguendo questo file localmente, apri il file HTML e inserisci i dati del tuo progetto Firebase nella variabile <strong>localFirebaseConfig</strong>.</p>
+    </div>`;
+    console.error("Configurazione Firebase mancante! Inseriscila in 'localFirebaseConfig' per l'esecuzione locale.");
 }
+
 
 // Translations object for managing all text content
 const translations = {
@@ -472,7 +516,7 @@ const translations = {
     apiStatusBtn: 'API Ok',
     processing: 'Elaborazione...',
     tabSearch: 'Cerca Carta',
-    tabDecks: 'Decks / Mazzi',
+    tabDecks: 'Mazzi',
     tabExplore: 'Esplora Espansioni',
     tabCsv: 'Carica CSV',
     tabData: 'Gestisci Dati',
@@ -1546,8 +1590,8 @@ function renderDecksList() {
             <div class="flex items-center justify-between">
                 <h3 class="font-bold text-gray-900">${deck.name}</h3>
                 <button class="delete-deck-btn text-red-500 hover:text-red-700 p-1" data-deck-id="${deck.id}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
-                        <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.58.275-2.332.574a.75.75 0 0 0-.708 1.442 4.95 4.95 0 0 1-.954-.337A.75.75 0 0 0 2 6.34v3.832c0 .299.176.551.435.65a4.996 4.996 0 0 1 2.158.74c1.171.463 2.502.68 3.864.68s2.693-.217 3.864-.68a4.996 4.996 0 0 1 2.158-.74c.259-.099.435-.351.435-.65V6.34a.75.75 0 0 0-.256-.56c-.328-.276-.667-.52-1.011-.734-1.287-.798-2.641-1.3-4.041-1.378V3.75A2.75 2.75 0 0 0 8.75 1h2.5A2.75 2.75 0 0 0 14 3.75v.443a29.897 29.897 0 0 1-.36 3.25.75.75 0 0 0 .25.748l1.793 1.792a.75.75 0 1 0 1.06-1.06l-1.66-1.66c.216-.499.42-.992.605-1.488.17-.45.245-.91.228-1.373A.75.75 0 0 0 17 4.193V3.75A4.25 4.25 0 0 0 12.75 0h-2.5A4.25 4.25 0 0 0 6 3.75v.443a29.897 29.897 0 0 1-.36 3.25.75.75 0 0 0 .25.748l1.793 1.792a.75.75 0 1 0 1.06-1.06L7.94 10l-1.66-1.66c.216-.499.42-.992.605-1.488.17-.45.245-.91.228-1.373A.75.75 0 0 0 7 4.193V3.75A2.75 2.75 0 0 1 8.75 1Z" clip-rule="evenodd" />
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                       <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
                     </svg>
                 </button>
             </div>
