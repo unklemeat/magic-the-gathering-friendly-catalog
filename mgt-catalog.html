@@ -1,0 +1,1728 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MTG Prices — Scryfall API Real-time</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Inter', sans-serif; }
+  
+  /* Custom modal styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+  }
+  .modal-content {
+    max-width: 90%;
+    width: 400px;
+    animation: modal-fade-in 0.3s ease-out;
+  }
+  @keyframes modal-fade-in {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Modal for card details */
+  .card-details-modal {
+    max-width: 800px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* Table sorting icon styles */
+  .sort-icon {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    vertical-align: middle;
+    margin-left: 4px;
+    transition: transform 0.3s;
+  }
+  .sort-asc {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid #374151;
+  }
+  .sort-desc {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #374151;
+  }
+
+  /* Status classes */
+  .bg-status-found { background-color: #d1fae5; }
+  .bg-status-not-found { background-color: #fee2e2; }
+  
+  /* Table styles */
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #E5E7EB; padding: 5px 8px; text-align: left; }
+  
+  /* Mic animation */
+  .mic-listening {
+    animation: pulse-mic 1s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  @keyframes pulse-mic {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+    70% {
+      transform: scale(1.1);
+      box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+  }
+
+  .tab-button.active {
+      @apply bg-white text-gray-900 border-b-2 border-purple-500;
+  }
+  .tab-content.hidden {
+      display: none;
+  }
+
+  /* Table container for responsiveness */
+  .table-container {
+    overflow-x: auto;
+  }
+
+  /* Specific styles for the set select dropdown */
+  .lang-select {
+    min-width: 120px;
+  }
+  
+  /* Color symbols */
+  .color-symbol {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    margin: 0 2px;
+    border: 1px solid #333;
+    vertical-align: middle;
+  }
+  .color-w { background-color: #f8f7d9; }
+  .color-u { background-color: #b9d8ee; }
+  .color-b { background-color: #000; } /* Darker black for better contrast */
+  .color-r { background-color: #e99086; }
+  .color-g { background-color: #a7d088; }
+  .color-c { background-color: #d1d1d1; }
+  .color-multi { background-color: #fdd206; border: 1px solid #333; }
+  .color-land { background-color: #f0f0f0; border: 1px solid #333; }
+  
+  /* Color filter buttons */
+  .color-filter-btn {
+    @apply p-2 rounded-full border-2 transition-all duration-200;
+  }
+  .color-filter-btn.active {
+    @apply border-purple-500 shadow-md;
+  }
+  
+  /* Checkbox styling */
+  .color-filter-label {
+    @apply flex items-center p-2 rounded-xl border-2 border-gray-300 cursor-pointer transition-all duration-200;
+  }
+  .color-filter-label:hover {
+    @apply border-purple-400;
+  }
+  .color-filter-label.checked {
+    @apply border-purple-500 bg-purple-100 shadow-md;
+  }
+
+  .card-selection-modal {
+    max-width: 800px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+  
+</style>
+</head>
+<body class="bg-gray-50 text-gray-900 font-sans transition-colors duration-300">
+
+<nav class="bg-gray-800 text-white p-4 shadow-lg sticky top-0 z-50">
+    <div class="container mx-auto flex flex-col sm:flex-row justify-between items-center gap-4">
+        <h1 class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-500 to-teal-500 cursor-pointer" data-lang-key="title">MTG Friendly Catalog</h1>
+        <div class="flex items-center gap-4">
+            <!-- Language selector as a dropdown -->
+            <select id="lang-select" class="lang-select bg-gray-700 text-white rounded-full px-4 py-2 pr-6 text-sm focus:outline-none focus:ring-2 focus:ring-gray-400">
+                <option value="ita">Italiano</option>
+                <option value="eng">English</option>
+            </select>
+            <div class="api-status-container flex items-center gap-2">
+                <span id="statusIcon" class="w-3 h-3 rounded-full"></span>
+                <button id="statusBtn" class="bg-gray-700 hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 font-medium rounded-full text-sm px-5 py-2.5 text-center transition-colors" data-lang-key="apiStatusBtn">API Ok</button>
+            </div>
+        </div>
+    </div>
+</nav>
+
+<main class="container mx-auto p-4">
+    <!-- Progress Section -->
+    <div id="progress-section" class="bg-white rounded-lg shadow-xl p-6 mb-6">
+        <div id="progress" class="mt-4 hidden">
+            <div class="progress-bar rounded-lg overflow-hidden h-4 bg-gray-200">
+                <div class="progress-fill h-full bg-emerald-500 transition-all duration-300" id="progressFill"></div>
+            </div>
+            <span id="progressText" class="text-sm mt-1 block" data-lang-key="processing">Elaborazione...</span>
+        </div>
+    </div>
+
+    <!-- Tabbed Interface -->
+    <div class="bg-white rounded-lg shadow-xl p-6 mb-6">
+        <div class="flex border-b border-gray-200">
+            <button class="tab-button active py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="search-tab" data-lang-key="tabSearch">Cerca Carta</button>
+            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="decks-tab" data-lang-key="tabDecks">Decks / Mazzi</button>
+            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="explore-tab" data-lang-key="tabExplore">Esplora Espansioni</button>
+            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="csv-tab" data-lang-key="tabCsv">Carica CSV</button>
+            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="data-tab" data-lang-key="tabData">Gestisci Dati</button>
+        </div>
+        
+        <div id="search-tab" class="tab-content pt-4">
+            <h2 class="text-xl font-bold mb-4" data-lang-key="searchCardTitle">Cerca una singola carta</h2>
+            <div class="flex flex-col md:flex-row items-stretch gap-4">
+                <div class="relative flex-grow flex items-center">
+                    <input type="text" id="cardNameInput" placeholder="Inserisci il nome della carta o parla..." class="flex-grow p-3 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors" data-lang-placeholder="searchPlaceholder" />
+                    <button id="voiceSearchBtn" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-full bg-gray-200 hover:bg-gray-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed" data-lang-title="voiceSearchTooltip">
+                        <svg id="mic-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5 text-gray-600">
+                            <path d="M8.25 4.5a3.75 3.75 0 1 1 7.5 0v8.25a3.75 3.75 0 1 1-7.5 0V4.5Z" />
+                            <path d="M15.75 17.25a.75.75 0 0 1-.75.75h-7.5a.75.75 0 0 1-.75-.75.75.75 0 0 1 .75-.75h7.5a.75.75 0 0 1 .75.75ZM9.75 17.25a.75.75 0 0 1-.75-.75V12a.75.75 0 0 1 .75-.75h4.5a.75.75 0 0 1 .75.75v4.5a.75.75 0 0 1-.75.75h-4.5Z" />
+                            <path d="M12 20.25a4.5 4.5 0 0 0 4.5-4.5V12a.75.75 0 0 1 1.5 0v3.75a6 6 0 0 1-12 0V12a.75.75 0 0 1 1.5 0v3.75a4.5 4.5 0 0 0 4.5 4.5Z" />
+                        </svg>
+                        <span id="mic-unsupported-icon" class="absolute inset-0 flex items-center justify-center text-red-500 font-bold text-xl hidden">/</span>
+                    </button>
+                </div>
+                <button id="searchCardBtn" class="w-full md:w-auto bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105" data-lang-key="searchAddBtn" data-lang-loading="Cerca..." data-lang-completed="Cerca & Aggiungi">Cerca & Aggiungi</button>
+            </div>
+        </div>
+
+        <div id="decks-tab" class="tab-content pt-4 hidden">
+            <div id="decks-list" class="decks-list">
+                <h2 class="text-xl font-bold mb-4" data-lang-key="decksTitle">I Miei Mazzi</h2>
+                <div class="flex flex-col md:flex-row items-stretch gap-4 mb-4">
+                    <input type="text" id="newDeckNameInput" placeholder="Inserisci il nome del nuovo mazzo..." class="flex-grow p-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors" data-lang-placeholder="newDeckPlaceholder" />
+                    <button id="createDeckBtn" class="w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105" data-lang-key="createDeckBtn">Crea Mazzo</button>
+                </div>
+                <div id="decks-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Deck cards will be loaded here -->
+                </div>
+            </div>
+            
+            <div id="deck-editor" class="deck-editor hidden">
+                <button id="backToDecksBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full shadow-lg transition-all duration-300 mb-4" data-lang-key="backBtn">Indietro</button>
+                <input type="text" id="deck-editor-name-input" class="text-xl font-bold mb-4 w-full p-2 border-2 border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500" />
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Left column: Current Deck -->
+                    <div class="my-deck-container">
+                        <h3 class="text-lg font-bold mb-2" data-lang-key="myDeckTitle">Il Mio Mazzo</h3>
+                        <div id="deck-list-container" class="space-y-2">
+                            <!-- Cards in the current deck will be loaded here -->
+                        </div>
+                    </div>
+
+                    <!-- Right column: Card Collection -->
+                    <div class="collection-container">
+                        <h3 class="text-lg font-bold mb-2" data-lang-key="collectionTitle">La Mia Collezione</h3>
+                        <input type="text" id="collectionSearchInput" placeholder="Filtra carte dalla tua collezione..." class="w-full p-2 mb-4 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500" data-lang-placeholder="filterCollectionPlaceholder">
+                        <div id="collection-cards-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-4 max-h-[60vh] overflow-y-auto">
+                            <!-- Cards from the collection will be loaded here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div id="explore-tab" class="tab-content pt-4 hidden">
+            <h2 class="text-xl font-bold mb-4" data-lang-key="exploreTitle">Esplora Espansioni</h2>
+            <div class="flex flex-col md:flex-row items-center gap-4 mb-4">
+                <label for="setSelect" class="font-semibold" data-lang-key="selectSetLabel">Seleziona un'espansione:</label>
+                <select id="setSelect" class="bg-gray-100 border-2 border-gray-200 rounded-xl p-3 focus:outline-none focus:ring-2 focus:ring-purple-500 flex-grow"></select>
+            </div>
+            <div id="setCardsContainer" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                <!-- Card previews will be loaded here -->
+            </div>
+        </div>
+        
+        <div id="csv-tab" class="tab-content pt-4 hidden">
+            <h2 class="text-xl font-bold mb-4" data-lang-key="csvTitle">Carica CSV con elenco carte</h2>
+            <input type="file" id="csvFile" accept=".csv,text/csv" class="w-full mb-2 text-gray-800 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-violet-50 file:text-violet-700 hover:file:bg-violet-100 transition-colors" />
+            <button id="processCsv" class="w-full md:w-auto bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105" data-lang-key="processCsvBtn" data-lang-loading="Elaborazione..." data-lang-completed="Elabora CSV">Elabora CSV</button>
+        </div>
+        
+        <div id="data-tab" class="tab-content pt-4 hidden">
+            <h2 class="text-xl font-bold mb-4" data-lang-key="dataTitle">Gestisci i dati</h2>
+            <div class="flex flex-col md:flex-row gap-4">
+                <button id="saveJsonBtn" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105" data-lang-key="saveJsonBtn">Salva come JSON</button>
+                <label for="loadJsonFile" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105 text-center cursor-pointer" data-lang-key="loadJsonLabel">Carica da JSON</label>
+                <input type="file" id="loadJsonFile" accept=".json,application/json" class="hidden" />
+            </div>
+        </div>
+    </div>
+    
+    <!-- Results section -->
+    <div id="resultsSection" class="bg-white rounded-lg shadow-xl p-6">
+        <h2 class="text-xl font-bold mb-4" data-lang-key="resultsTitle">Collezione</h2>
+        
+        <!-- Language selector and color filter section -->
+        <div class="flex flex-col md:flex-row justify-between items-center gap-4 mb-4">
+            <div class="flex flex-wrap items-center gap-2">
+                <label class="color-filter-label" for="filter-all">
+                    <input type="checkbox" id="filter-all" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="all" checked>
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterAll">Tutti</span>
+                </label>
+                <label class="color-filter-label" for="filter-W">
+                    <input type="checkbox" id="filter-W" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="W">
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterWhite">Bianco</span>
+                </label>
+                <label class="color-filter-label" for="filter-U">
+                    <input type="checkbox" id="filter-U" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="U">
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterBlue">Blu</span>
+                </label>
+                <label class="color-filter-label" for="filter-B">
+                    <input type="checkbox" id="filter-B" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="B">
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterBlack">Nero</span>
+                </label>
+                <label class="color-filter-label" for="filter-R">
+                    <input type="checkbox" id="filter-R" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="R">
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterRed">Rosso</span>
+                </label>
+                <label class="color-filter-label" for="filter-G">
+                    <input type="checkbox" id="filter-G" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="G">
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterGreen">Verde</span>
+                </label>
+                <label class="color-filter-label" for="filter-multi">
+                    <input type="checkbox" id="filter-multi" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="multi">
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterMulti">Multicolore</span>
+                </label>
+                <label class="color-filter-label" for="filter-incolor">
+                    <input type="checkbox" id="filter-incolor" class="h-4 w-4 text-purple-600 form-checkbox rounded" data-color="incolor">
+                    <span class="ml-2 text-gray-700 font-semibold" data-lang-key="filterColorless">Incolore/Terre</span>
+                </label>
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <table id="resultsTable" class="w-full rounded-lg">
+                <thead>
+                    <tr class="bg-gray-200">
+                        <th class="py-3 px-4 rounded-tl-lg border" data-lang-key="tableColNum">#</th>
+                        <th class="py-3 px-4 border" data-lang-key="tableColImage">Immagine</th>
+                        <th class="py-3 px-4 sortable border" data-sort="ita-name" data-lang-key="tableColNameIta">Nome ITA<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="eng-name" data-lang-key="tableColNameEng">Nome ENG<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="color" data-lang-key="tableColColor">Colore<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="set" data-lang-key="tableColSet">Set<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="eur-price" data-lang-key="tableColPriceEur">Prezzo EUR<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 sortable border" data-sort="usd-price" data-lang-key="tableColPriceUsd">Prezzo USD<span class="sort-icon"></span></th>
+                        <th class="py-3 px-4 border" data-lang-key="tableColDetails">Dettagli</th>
+                        <th class="py-3 px-4 rounded-tr-lg border" data-lang-key="tableColAction">Azione</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</main>
+
+<!-- Generic Modal -->
+<div id="customModal" class="modal-overlay hidden">
+  <div class="modal-content bg-gray-100 rounded-xl p-6 shadow-2xl">
+    <p id="modalMessage" class="text-lg text-gray-800 mb-6 text-center"></p>
+    <div id="modalButtons" class="flex justify-center gap-4">
+      <button id="modalOkBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-full transition-colors" data-lang-key="okBtn">OK</button>
+      <button id="modalCancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors hidden" data-lang-key="cancelBtn">Annulla</button>
+    </div>
+  </div>
+</div>
+
+<!-- Card Details Modal -->
+<div id="cardDetailsModal" class="modal-overlay hidden">
+  <div class="card-details-modal bg-gray-800 rounded-xl p-6 shadow-2xl relative">
+    <button id="closeDetailsModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+        <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+      </svg>
+    </button>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        <div id="cardImageContainer" class="flex flex-col gap-4">
+            <!-- Card images will be inserted here -->
+        </div>
+        <div>
+            <h3 id="cardNameInModal" class="text-xl font-bold text-white mb-2"></h3>
+            <p id="cardDescriptionInModal" class="text-gray-300 text-sm whitespace-pre-wrap"></p>
+            <button id="addToCollectionBtn" class="mt-4 w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-full shadow-lg transition-all duration-300" data-lang-key="addToCollectionBtn">Aggiungi alla Collezione</button>
+        </div>
+    </div>
+  </div>
+</div>
+
+<!-- Card Selection Modal -->
+<div id="cardSelectionModal" class="modal-overlay hidden">
+    <div class="card-selection-modal bg-gray-100 rounded-xl p-6 shadow-2xl relative">
+        <button id="closeSelectionModalBtn" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-6 h-6">
+                <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 0 1 1.06 0L12 10.94l5.47-5.47a.75.75 0 1 1 1.06 1.06L13.06 12l5.47 5.47a.75.75 0 1 1-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 0 1-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 0 1 0-1.06Z" clip-rule="evenodd" />
+            </svg>
+        </button>
+        <h3 id="selectionModalTitle" class="text-xl font-bold text-gray-900 mb-4" data-lang-key="selectionModalTitle">Seleziona una carta:</h3>
+        <div id="cardSelectionGrid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 max-h-[70vh] overflow-y-auto">
+            <!-- Cards will be dynamically inserted here -->
+        </div>
+    </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+setLogLevel('debug');
+
+const SCRYFALL_API = "https://api.scryfall.com";
+let allSets = [];
+let searchResults = [];
+let activeFilters = ['all', 'W', 'U', 'B', 'R', 'G', 'multi', 'incolor'];
+let activeLang = 'ita';
+let currentCardDetails = null;
+
+// Firebase & Firestore setup
+let db;
+let auth;
+let userId;
+let decks = [];
+let currentDeck = null;
+let currentDeckId = null;
+
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+if (Object.keys(firebaseConfig).length > 0) {
+    const app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+    
+    if (initialAuthToken) {
+        signInWithCustomToken(auth, initialAuthToken).catch(error => {
+            console.error("Error signing in with custom token:", error);
+            signInAnonymously(auth);
+        });
+    } else {
+        signInAnonymously(auth);
+    }
+    
+    onAuthStateChanged(auth, async (user) => {
+        if (user) {
+            userId = user.uid;
+            console.log("User authenticated:", userId);
+            
+            // Set up real-time listeners for decks and collection
+            const decksQuery = query(collection(db, `artifacts/${appId}/users/${userId}/decks`));
+            onSnapshot(decksQuery, (snapshot) => {
+                decks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log("Decks loaded:", decks);
+                const currentTab = document.querySelector('.tab-button.active').dataset.tab;
+                if (currentTab === 'decks-tab') {
+                    renderDecksList();
+                }
+            });
+
+            const collectionQuery = query(collection(db, `artifacts/${appId}/users/${userId}/collection`));
+            onSnapshot(collectionQuery, (snapshot) => {
+                searchResults = snapshot.docs.map(doc => ({ id: doc.id, result: doc.data() }));
+                console.log("Collection loaded:", searchResults);
+                const currentTab = document.querySelector('.tab-button.active').dataset.tab;
+                if (currentTab === 'search-tab') {
+                    renderTable();
+                }
+            });
+            
+        } else {
+            console.log("No user authenticated.");
+        }
+    });
+
+} else {
+    console.error("Firebase config is missing. The app will not function correctly.");
+}
+
+// Translations object for managing all text content
+const translations = {
+  ita: {
+    title: 'MTG Friendly Catalog',
+    apiStatusTitle: 'Stato API',
+    apiStatusReady: 'Pronto per cercare carte',
+    apiStatusConnecting: 'Connessione in corso. In attesa di risposta da Scryfall.',
+    apiStatusError: 'Errore di connessione con l\'API Scryfall. Riprova a ricaricare la pagina.',
+    apiStatusBtn: 'API Ok',
+    processing: 'Elaborazione...',
+    tabSearch: 'Cerca Carta',
+    tabDecks: 'Decks / Mazzi',
+    tabExplore: 'Esplora Espansioni',
+    tabCsv: 'Carica CSV',
+    tabData: 'Gestisci Dati',
+    exploreTitle: 'Esplora Espansioni',
+    selectSetLabel: 'Seleziona un\'espansione:',
+    decksTitle: 'I Miei Mazzi',
+    newDeckPlaceholder: 'Inserisci il nome del nuovo mazzo...',
+    createDeckBtn: 'Crea Mazzo',
+    myDeckTitle: 'Il Mio Mazzo',
+    collectionTitle: 'La Mia Collezione',
+    filterCollectionPlaceholder: 'Filtra carte dalla tua collezione...',
+    backBtn: 'Indietro',
+    searchCardTitle: 'Cerca una singola carta',
+    searchPlaceholder: 'Inserisci il nome della carta o parla...',
+    voiceSearchTooltip: 'Riconoscimento vocale supportato solo su alcuni browser',
+    searchAddBtn: 'Cerca & Aggiungi',
+    'searchAddBtn-loading': 'Caricamento...',
+    'searchAddBtn-completed': 'Cerca & Aggiungi',
+    csvTitle: 'Carica CSV con elenco carte',
+    processCsvBtn: 'Elabora CSV',
+    'processCsvBtn-loading': 'Elaborazione...',
+    'processCsvBtn-completed': 'Elabora CSV',
+    dataTitle: 'Gestisci i dati',
+    saveJsonBtn: 'Salva come JSON',
+    loadJsonLabel: 'Carica da JSON',
+    resultsTitle: 'Collezione',
+    filterAll: 'Tutti',
+    filterWhite: 'Bianco',
+    filterBlue: 'Blu',
+    filterBlack: 'Nero',
+    filterRed: 'Rosso',
+    filterGreen: 'Verde',
+    filterMulti: 'Multicolore',
+    filterColorless: 'Incolore/Terre',
+    tableColNum: '#',
+    tableColImage: 'Immagine',
+    tableColNameIta: 'Nome ITA',
+    tableColNameEng: 'Nome ENG',
+    tableColColor: 'Colore',
+    tableColSet: 'Set',
+    tableColPriceEur: 'Prezzo EUR',
+    tableColPriceUsd: 'USD Price',
+    tableColDetails: 'Dettagli',
+    tableColAction: 'Elimina',
+    modalNoCardName: 'Inserisci un nome di carta per la ricerca.',
+    modalNotFound: 'Nessun risultato trovato per la carta: ',
+    modalCsvComplete: 'Elaborazione CSV completata.',
+    modalNoCardsToSave: 'La tabella dei risultati è vuota. Aggiungi delle carte prima di salvare.',
+    modalJsonSaved: 'Dati salvati con successo come mtg_prices_data.json!',
+    modalInvalidJson: 'Il file JSON non è in un formato valido (non è un array di carte).',
+    modalJsonLoadError: 'Errore nel caricamento del file JSON. Assicurati che il formato sia corretto.',
+    modalCardsLoaded: 'Caricate CARD_COUNT carte dal file JSON.',
+    modalRemoveCard: 'Sei sicuro di voler rimuovere questa carta?',
+    modalApiOk: 'Connessione API Scryfall riuscita. Pronto all\'uso.',
+    modalApiError: 'Errore di connessione con l\'API Scryfall. Riprova a ricaricare la pagina.',
+    modalApiConnecting: 'Connessione in corso. In attesa di risposta da Scryfall.',
+    modalSpeechError: 'Errore durante il riconoscimento vocale. Riprova.',
+    modalNoImage: 'Nessuna immagine disponibile.',
+    modalNoOracleText: 'Nessun testo d\'oracolo disponibile.',
+    okBtn: 'OK',
+    cancelBtn: 'Annulla',
+    addToCollectionBtn: 'Aggiungi alla Collezione',
+    selectionModalTitle: 'Seleziona una carta'
+  },
+  eng: {
+    title: 'MTG Friendly Catalog',
+    apiStatusTitle: 'API Status',
+    apiStatusReady: 'Ready to search for cards',
+    apiStatusConnecting: 'Connecting... Waiting for Scryfall response.',
+    apiStatusError: 'Connection error with Scryfall API. Please reload the page.',
+    apiStatusBtn: 'API Action',
+    processing: 'Processing...',
+    tabSearch: 'Search Card',
+    tabDecks: 'Decks',
+    tabExplore: 'Explore Sets',
+    tabCsv: 'Load CSV',
+    tabData: 'Manage Data',
+    exploreTitle: 'Explore Sets',
+    selectSetLabel: 'Select a set:',
+    decksTitle: 'My Decks',
+    newDeckPlaceholder: 'Enter new deck name...',
+    createDeckBtn: 'Create Deck',
+    myDeckTitle: 'My Deck',
+    collectionTitle: 'My Collection',
+    filterCollectionPlaceholder: 'Filter cards from your collection...',
+    backBtn: 'Back',
+    searchCardTitle: 'Search for a single card',
+    searchPlaceholder: 'Enter card name or speak...',
+    voiceSearchTooltip: 'Voice recognition is supported only on some browsers',
+    searchAddBtn: 'Search & Add',
+    'searchAddBtn-loading': 'Searching...',
+    'searchAddBtn-completed': 'Search & Add',
+    csvTitle: 'Load CSV with card list',
+    processCsvBtn: 'Process CSV',
+    'processCsvBtn-loading': 'Processing...',
+    'processCsvBtn-completed': 'Process CSV',
+    dataTitle: 'Manage Data',
+    saveJsonBtn: 'Save as JSON',
+    loadJsonLabel: 'Load from JSON',
+    resultsTitle: 'Collection',
+    filterAll: 'All',
+    filterWhite: 'White',
+    filterBlue: 'Blue',
+    filterBlack: 'Black',
+    filterRed: 'Red',
+    filterGreen: 'Green',
+    filterMulti: 'Multicolored',
+    filterColorless: 'Colorless/Lands',
+    tableColNum: '#',
+    tableColImage: 'Image',
+    tableColNameIta: 'ITA Name',
+    tableColNameEng: 'ENG Name',
+    tableColColor: 'Color',
+    tableColSet: 'Set',
+    tableColPriceEur: 'EUR Price',
+    tableColPriceUsd: 'USD Price',
+    tableColDetails: 'Details',
+    tableColAction: 'Delete',
+    modalNoCardName: 'Please enter a card name to search.',
+    modalNotFound: 'No results found for card: ',
+    modalCsvComplete: 'CSV processing complete.',
+    modalNoCardsToSave: 'The results table is empty. Add some cards before saving.',
+    modalJsonSaved: 'Data successfully saved as mtg_prices_data.json!',
+    modalInvalidJson: 'The JSON file is not in a valid format (not an array of cards).',
+    modalJsonLoadError: 'Error loading the JSON file. Ensure the format is correct.',
+    modalCardsLoaded: 'Loaded CARD_COUNT cards from the JSON file.',
+    modalRemoveCard: 'Are you sure you want to remove this card?',
+    modalApiOk: 'Scryfall API connection successful. Ready to use.',
+    modalApiError: 'Connection error with Scryfall API. Please try reloading the page.',
+    modalApiConnecting: 'Connecting... Waiting for Scryfall response.',
+    modalSpeechError: 'Error during voice recognition. Please try again.',
+    modalNoImage: 'No image available.',
+    modalNoOracleText: 'No oracle text available.',
+    okBtn: 'OK',
+    cancelBtn: 'Cancel',
+    addToCollectionBtn: 'Add to Collection',
+    selectionModalTitle: 'Select a card'
+  }
+};
+
+// Function to translate the UI based on the selected language
+function updateUI(lang) {
+    document.querySelectorAll('[data-lang-key]').forEach(element => {
+        const key = element.dataset.langKey;
+        if (translations[lang] && translations[lang][key]) {
+            element.textContent = translations[lang][key];
+        }
+    });
+
+    document.querySelectorAll('[data-lang-placeholder]').forEach(element => {
+        const key = element.dataset.langPlaceholder;
+        if (translations[lang] && translations[lang][key]) {
+            element.placeholder = translations[lang][key];
+        }
+    });
+
+    document.querySelectorAll('[data-lang-title]').forEach(element => {
+        const key = element.dataset.langTitle;
+        if (translations[lang] && translations[lang][key]) {
+            element.title = translations[lang][key];
+        }
+    });
+}
+
+// Table sorting variables
+let currentSort = { column: null, direction: 'asc' };
+
+// API status variable
+let apiStatus = 'connecting';
+
+// Scryfall rate limiting logic (max 10 reqs per second)
+let requestQueue = [];
+let isProcessing = false;
+async function rateLimitedRequest(url) {
+  return new Promise((resolve) => {
+    requestQueue.push({ url, resolve });
+    processQueue();
+  });
+}
+
+async function processQueue() {
+  if (isProcessing || requestQueue.length === 0) return;
+  
+  isProcessing = true;
+  while (requestQueue.length > 0) {
+    const { url, resolve } = requestQueue.shift();
+    try {
+      const response = await fetch(url);
+      const data = await response.json();
+      resolve(data);
+    } catch (error) {
+      console.error("API Error:", error);
+      resolve(null);
+    }
+    // Wait 150ms between requests for safety margin
+    await new Promise(r => setTimeout(r, 150));
+  }
+  isProcessing = false;
+}
+
+// Function to update the visual API status
+function updateApiStatus(status, messageKey) {
+    const statusIcon = document.getElementById('statusIcon');
+    const statusBtn = document.getElementById('statusBtn');
+    
+    // Check if the elements exist before trying to update them
+    if (statusIcon) {
+        if (status === 'ready') {
+            statusIcon.className = 'w-3 h-3 rounded-full bg-emerald-500';
+        } else if (status === 'error') {
+            statusIcon.className = 'w-3 h-3 rounded-full bg-red-500';
+        } else { // connecting
+            statusIcon.className = 'w-3 h-3 rounded-full bg-yellow-500 animate-pulse';
+        }
+    }
+
+    if (statusBtn) {
+        statusBtn.textContent = translations[activeLang].apiStatusBtn;
+    }
+}
+
+// Fetch all sets from Scryfall on app startup
+async function fetchSets() {
+  updateApiStatus('connecting', 'apiStatusConnecting');
+  try {
+    const response = await rateLimitedRequest(`${SCRYFALL_API}/sets`);
+    if (response && response.data) {
+      // Sort sets by release date, from newest to oldest
+      allSets = response.data.filter(set => set.card_count > 0).sort((a, b) => new Date(b.released_at) - new Date(a.released_at));
+      updateApiStatus('ready', 'apiStatusReady');
+      populateSetSelect();
+    } else {
+      updateApiStatus('error', 'apiStatusError');
+    }
+  } catch (error) {
+    console.error("Sets loading error:", error);
+    updateApiStatus('error', 'apiStatusError');
+  }
+}
+
+// Populate the set selector
+function populateSetSelect() {
+  const setSelect = document.getElementById('setSelect');
+  setSelect.innerHTML = ''; // Clear existing options
+  allSets.forEach(set => {
+    const option = document.createElement('option');
+    option.value = set.code;
+    option.textContent = set.name;
+    setSelect.appendChild(option);
+  });
+}
+
+// Function to fetch and render cards for a specific set
+async function fetchAndRenderSetCards(setCode) {
+    const cardsContainer = document.getElementById('setCardsContainer');
+    cardsContainer.innerHTML = '';
+    
+    document.getElementById("progress").classList.remove('hidden');
+    let totalCardsFetched = 0;
+    
+    let url = `${SCRYFALL_API}/cards/search?order=set&q=set%3A${setCode}&unique=prints`;
+
+    try {
+        while (url) {
+            const response = await rateLimitedRequest(url);
+            if (!response || !response.data) {
+                break;
+            }
+
+            totalCardsFetched += response.data.length;
+            document.getElementById("progressText").textContent = `${translations[activeLang].processing} ${totalCardsFetched} carte...`;
+
+            response.data.forEach(card => {
+                const cardElement = document.createElement('div');
+                cardElement.className = 'card-tile p-2 bg-gray-100 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer';
+                
+                const imageUrl = card.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
+                const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
+                
+                cardElement.innerHTML = `
+                    <img src="${imageUrl}" alt="${cardName}" class="w-full rounded-lg mb-2">
+                    <p class="text-sm text-center font-semibold text-gray-800">${cardName}</p>
+                `;
+                cardElement.addEventListener('click', () => {
+                    currentCardDetails = card;
+                    showCardDetailsModal(card);
+                });
+                cardsContainer.appendChild(cardElement);
+            });
+
+            url = response.has_more ? response.next_page : null;
+        }
+    } catch (error) {
+        console.error("Error fetching set cards:", error);
+        showModal('modalApiError');
+    } finally {
+        document.getElementById("progress").classList.add('hidden');
+    }
+}
+
+// Normalize card name by removing special characters and accents
+function normalizeName(name) {
+  return name.toLowerCase()
+    .replace(/[àáâãäå]/g, 'a')
+    .replace(/[èéêë]/g, 'e')
+    .replace(/[ìíîï]/g, 'i')
+    .replace(/[òóôõöø]/g, 'o')
+    .replace(/[ùúûü]/g, 'u')
+    .replace(/[ç]/g, 'c')
+    .replace(/[ñ]/g, 'n')
+    .replace(/[^a-z0-9\s\-'"]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Capitalize the first letter of each word
+function capitalizeWords(str) {
+  return str.split(' ').map(word => {
+    if (word.length > 0) {
+      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    }
+    return '';
+  }).join(' ');
+}
+
+// Helper function to fetch all prints of a card by its oracle ID
+async function fetchAllPrintsByOracleId(oracleId) {
+    let allPrints = [];
+    let url = `${SCRYFALL_API}/cards/search?q=oracleid%3A${oracleId}&unique=prints&order=released`;
+    while (url) {
+        const response = await rateLimitedRequest(url);
+        if (!response || !response.data) {
+            break;
+        }
+        allPrints = allPrints.concat(response.data);
+        url = response.has_more ? response.next_page : null;
+    }
+    return allPrints;
+}
+
+// New unified search function
+async function findCardAndHandleResults(cardName) {
+    const formattedName = cardName.trim();
+    
+    // Step 1: Strict search for exact match
+    let exactSearchUrl = `${SCRYFALL_API}/cards/search?q="${encodeURIComponent(formattedName)}"+lang%3A${activeLang}`;
+    const exactResult = await rateLimitedRequest(exactSearchUrl);
+
+    if (exactResult && exactResult.data && exactResult.data.length > 0) {
+        const exactMatches = exactResult.data.filter(card => normalizeName(card.name) === normalizeName(formattedName) || (card.printed_name && normalizeName(card.printed_name) === normalizeName(formattedName)));
+        
+        if (exactMatches.length === 1) {
+            const card = exactMatches[0];
+            const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
+            addCardToCollection({ ...card, cardPrints: allPrints });
+            return;
+        } else if (exactMatches.length > 1) {
+            showSearchResultsModal(exactMatches);
+            return;
+        }
+    }
+    
+    // Step 2: Fuzzy search as a fallback if no exact match is found
+    const namedSearchUrl = `${SCRYFALL_API}/cards/named?fuzzy=${encodeURIComponent(formattedName)}`;
+    const namedResult = await rateLimitedRequest(namedSearchUrl);
+    
+    if (namedResult && namedResult.object === "card") {
+      const allPrints = await fetchAllPrintsByOracleId(namedResult.oracle_id);
+      
+      if (allPrints.length > 0) {
+        showSearchResultsModal(allPrints);
+        return;
+      }
+    }
+    
+    showModal('modalNotFound' + cardName);
+}
+
+function showSearchResultsModal(cards) {
+    const modal = document.getElementById('cardSelectionModal');
+    const grid = document.getElementById('cardSelectionGrid');
+    grid.innerHTML = '';
+
+    cards.forEach(card => {
+        const cardElement = document.createElement('div');
+        cardElement.className = 'cursor-pointer p-2 bg-gray-200 rounded-lg shadow-md hover:bg-gray-300 transition-colors';
+        const imageUrl = card.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
+        const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
+        cardElement.innerHTML = `
+            <img src="${imageUrl}" alt="${cardName}" class="w-full rounded-lg mb-2">
+            <p class="text-sm text-center font-semibold">${cardName}</p>
+        `;
+        cardElement.addEventListener('click', async () => {
+            const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
+            addCardToCollection({ ...card, cardPrints: allPrints });
+            modal.classList.add('hidden');
+        });
+        grid.appendChild(cardElement);
+    });
+
+    modal.classList.remove('hidden');
+}
+
+// Show the card details modal
+function showCardDetailsModal(card) {
+    const modal = document.getElementById('cardDetailsModal');
+    const cardImageContainer = document.getElementById('cardImageContainer');
+    const cardNameInModal = document.getElementById('cardNameInModal');
+    const cardDescriptionInModal = document.getElementById('cardDescriptionInModal');
+    const addToCollectionBtn = document.getElementById('addToCollectionBtn');
+
+    cardImageContainer.innerHTML = '';
+    
+    // Check for "transform" property which indicates a double-sided card
+    if (card.card_faces) {
+        card.card_faces.forEach(face => {
+            if (face.image_uris && face.image_uris.large) {
+                const img = document.createElement('img');
+                img.src = face.image_uris.large;
+                img.alt = face.name;
+                img.className = "w-full rounded-lg shadow-lg";
+                cardImageContainer.appendChild(img);
+            }
+        });
+    } else if (card.image_uris && card.image_uris.large) {
+        const img = document.createElement('img');
+        img.src = card.image_uris.large;
+        img.alt = card.name;
+        img.className = "w-full rounded-lg shadow-lg";
+        cardImageContainer.appendChild(img);
+    } else {
+        const noImageText = translations[activeLang].modalNoImage;
+        cardImageContainer.innerHTML = `<div class="text-gray-400 text-center">${noImageText}</div>`;
+    }
+
+    const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
+    cardNameInModal.textContent = cardName;
+    const descText = activeLang === 'ita' ? (card.oracle_text || translations.ita.modalNoOracleText) : (card.oracle_text || translations.eng.modalNoOracleText);
+    cardDescriptionInModal.textContent = descText;
+
+    // Set a data attribute on the button to store the card data
+    addToCollectionBtn.onclick = async () => {
+        addCardToCollection(card);
+        modal.classList.add('hidden');
+    };
+    
+    modal.classList.remove('hidden');
+}
+
+// Show a generic modal with a custom message
+function showModal(messageKey, showCancel = false, onOk = null, onCancel = null, replacements = {}) {
+    const modal = document.getElementById('customModal');
+    const modalMessage = document.getElementById('modalMessage');
+    const modalOkBtn = document.getElementById('modalOkBtn');
+    const modalCancelBtn = document.getElementById('modalCancelBtn');
+
+    let message = translations[activeLang][messageKey] || messageKey;
+    for (const [key, value] of Object.entries(replacements)) {
+      message = message.replace(key, value);
+    }
+    modalMessage.textContent = message;
+    modalCancelBtn.classList.toggle('hidden', !showCancel);
+
+    modal.classList.remove('hidden');
+
+    modalOkBtn.onclick = () => {
+        modal.classList.add('hidden');
+        if (onOk) onOk();
+    };
+    modalCancelBtn.onclick = () => {
+        modal.classList.add('hidden');
+        if (onCancel) onCancel();
+    };
+}
+
+// Function to add a card to the collection table
+async function addCardToCollection(cardData) {
+    if (!db || !userId) {
+        console.error("Firebase is not initialized or user is not authenticated.");
+        return;
+    }
+    
+    const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+    
+    try {
+        const cardToSave = { ...cardData };
+        delete cardToSave.cardPrints; // Remove the large array to avoid exceeding size limit
+        await addDoc(collectionRef, cardToSave);
+        console.log("Card added to Firestore collection:", cardToSave.name);
+    } catch (e) {
+        console.error("Error adding card to collection:", e);
+    }
+}
+
+// Add a new row to the table
+function addRow(data, uniqueId) {
+    if (!data || !data.prices) {
+        console.error("Dati non validi per addRow:", data);
+        return;
+    }
+
+    const tableBody = document.querySelector('#resultsTable tbody');
+    const newRow = document.createElement('tr');
+    newRow.className = "border-t border-gray-200 transition-all duration-300 hover:bg-gray-100";
+    newRow.dataset.rowId = uniqueId;
+    newRow.id = uniqueId;
+    const index = tableBody.childElementCount;
+
+    const imageUrl = data.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
+    const colorSymbols = (data.colors && Array.isArray(data.colors)) ? data.colors.map(c => `<span class="color-symbol color-${c.toLowerCase()}"></span>`).join('') : (data.type_line && data.type_line.includes('Land') ? `<span class="color-symbol color-land"></span>` : `<span class="color-symbol color-c"></span>`);
+    
+    const setName = data.set_name || data.set.toUpperCase();
+    const setOptions = `<option value="${data.id}" selected>${setName}</option>`;
+
+    const cardNameIta = data.printed_name || data.name || 'N/A';
+    const cardNameEng = data.name || 'N/A';
+
+    newRow.innerHTML = `
+        <td class="py-2 px-4 border">${index + 1}</td>
+        <td class="py-2 px-4 border">
+            <img src="${imageUrl}" alt="${cardNameEng}" class="w-20 rounded-lg shadow-md card-img" onerror="this.onerror=null;this.src='https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';">
+        </td>
+        <td class="py-2 px-4 border text-ita-name">${cardNameIta}</td>
+        <td class="py-2 px-4 border text-eng-name">${cardNameEng}</td>
+        <td class="py-2 px-4 border color-cell">${colorSymbols}</td>
+        <td class="py-2 px-4 border">
+            <select class="p-1 border rounded-lg set-select">
+                ${setOptions}
+            </select>
+        </td>
+        <td class="py-2 px-4 border font-semibold price-eur">${data.prices.eur ? `${data.prices.eur} €` : "—"}</td>
+        <td class="py-2 px-4 border font-semibold price-usd">${data.prices.usd ? `${data.prices.usd} $` : "—"}</td>
+        <td class="py-2 px-4 border">
+            <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-1 px-3 rounded-full text-xs details-btn">${translations[activeLang].tableColDetails}</button>
+        </td>
+        <td class="py-2 px-4 border">
+            <button class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-full text-xs remove-btn" data-lang-key="tableColAction">${translations[activeLang].tableColAction}</button>
+        </td>
+    `;
+    tableBody.appendChild(newRow);
+    
+    const selectElement = newRow.querySelector('.set-select');
+
+    selectElement.addEventListener('mousedown', async (e) => {
+        if (e.target.dataset.populated) return; 
+        e.target.dataset.populated = 'true'; 
+
+        e.target.innerHTML = `<option>${translations[activeLang]['searchAddBtn-loading']}</option>`;
+
+        const cardInCollection = searchResults.find(r => r.id === uniqueId);
+        if (cardInCollection && cardInCollection.result.oracle_id) {
+            const allPrints = await fetchAllPrintsByOracleId(cardInCollection.result.oracle_id);
+            if (allPrints.length > 0) {
+                const newSetOptions = allPrints.map(print => {
+                    const setObj = allSets.find(s => s.code === print.set.toLowerCase());
+                    const printSetName = setObj ? setObj.name : print.set.toUpperCase();
+                    return `<option value="${print.id}" ${data.id === print.id ? 'selected' : ''}>${printSetName}</option>`;
+                }).join('');
+                e.target.innerHTML = newSetOptions;
+            }
+        }
+    });
+
+    selectElement.addEventListener('change', async (e) => {
+        const selectedPrintId = e.target.value;
+        const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
+        
+        const printDataResponse = await rateLimitedRequest(`${SCRYFALL_API}/cards/${selectedPrintId}`);
+        if (printDataResponse && printDataResponse.object === 'card') {
+            const printToSave = { ...printDataResponse };
+            delete printToSave.cardPrints;
+            await setDoc(cardDocRef, printToSave);
+        }
+    });
+
+    newRow.querySelector('.details-btn').addEventListener('click', () => {
+        const cardInCollection = searchResults.find(r => r.id === uniqueId);
+        if (cardInCollection) {
+            showCardDetailsModal(cardInCollection.result);
+        }
+    });
+    
+    newRow.querySelector('.remove-btn').addEventListener('click', () => {
+        showModal('modalRemoveCard', true, async () => {
+            if (!db || !userId) return;
+            const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
+            await deleteDoc(cardDocRef);
+        });
+    });
+}
+
+// Re-index the rows after a deletion
+function reindexRows() {
+  document.querySelectorAll('#resultsTable tbody tr').forEach((row, index) => {
+    row.querySelector('td:first-child').textContent = index + 1;
+  });
+}
+
+// Render the table based on the current filter and language
+function renderTable() {
+    const tableBody = document.querySelector('#resultsTable tbody');
+    tableBody.innerHTML = '';
+    
+    if (!Array.isArray(searchResults)) {
+        console.error("searchResults non è un array. Impossibile renderizzare la tabella.");
+        return;
+    }
+    
+    const filteredResults = searchResults.filter(r => {
+        const cardColors = r.result.colors;
+        const typeLine = r.result.type_line;
+        
+        // If "all" is selected or no other filters are active, show all cards
+        const allChecked = document.getElementById('filter-all').checked;
+        if (allChecked) {
+            return true;
+        }
+
+        const matchesMulti = activeFilters.includes('multi') && cardColors && cardColors.length > 1;
+        const matchesColorless = activeFilters.includes('incolor') && (!cardColors || cardColors.length === 0) && !(typeLine && typeLine.includes('Land'));
+        const matchesSpecificColor = activeFilters.some(filterColor => cardColors && cardColors.includes(filterColor));
+        const matchesLand = activeFilters.includes('incolor') && typeLine && typeLine.includes('Land');
+
+        // A card is included if it matches any of the active filters
+        return matchesMulti || matchesColorless || matchesSpecificColor || matchesLand;
+    });
+
+    // Sort filtered results before rendering
+    if (currentSort.column) {
+        filteredResults.sort((a, b) => {
+            let aVal = a.sortable[currentSort.column];
+            let bVal = b.sortable[currentSort.column];
+            
+            if (typeof aVal === 'string') {
+                return currentSort.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            } else {
+                return currentSort.direction === 'asc' ? aVal - bVal : bVal - aVal;
+            }
+        });
+    }
+
+    filteredResults.forEach(result => {
+        if (result && result.result) {
+            addRow(result.result, result.id);
+        }
+    });
+
+    // Update visibility of name columns based on activeLang
+    const itaNameCells = document.querySelectorAll('.text-ita-name');
+    const engNameCells = document.querySelectorAll('.text-eng-name');
+    const itaHeader = document.querySelector('th[data-sort="ita-name"]');
+    const engHeader = document.querySelector('th[data-sort="eng-name"]');
+
+    if (activeLang === 'ita') {
+        itaNameCells.forEach(cell => cell.style.display = '');
+        engNameCells.forEach(cell => cell.style.display = 'none');
+        itaHeader.style.display = '';
+        engHeader.style.display = 'none';
+    } else {
+        itaNameCells.forEach(cell => cell.style.display = 'none');
+        engNameCells.forEach(cell => cell.style.display = '');
+        itaHeader.style.display = 'none';
+        engHeader.style.display = 'none';
+    }
+}
+
+// Function to sort the table
+function sortColumn(column, direction) {
+  const tableBody = document.querySelector('#resultsTable tbody');
+  const rows = Array.from(document.getElementById('resultsTable').rows).slice(1);
+
+  rows.sort((a, b) => {
+    let aVal = a.children[headerIndex(column)].textContent.trim();
+    let bVal = b.children[headerIndex(column)].textContent.trim();
+
+    if (column === 'eur-price' || column === 'usd-price') {
+      const aPrice = parseFloat(aVal.replace(' €', '').replace('$', '').replace(',', '.')) || 0;
+      const bPrice = parseFloat(bVal.replace(' €', '').replace('$', '').replace(',', '.')) || 0;
+      return direction === 'asc' ? aPrice - bPrice : bPrice - aPrice;
+    } else {
+      return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+    }
+  });
+
+  rows.forEach(row => tableBody.appendChild(row));
+  reindexRows();
+}
+
+// Get the index of the header column
+function headerIndex(column) {
+  const headers = Array.from(document.querySelectorAll('#resultsTable th'));
+  const header = headers.find(h => h.dataset.sort === column);
+  return headers.indexOf(header);
+}
+
+// Handle voice search
+if ('webkitSpeechRecognition' in window) {
+    const voiceSearchBtn = document.getElementById('voiceSearchBtn');
+    const cardNameInput = document.getElementById('cardNameInput');
+    const micIcon = document.getElementById('mic-icon');
+    let isListening = false;
+    const recognition = new webkitSpeechRecognition();
+    recognition.continuous = false;
+    recognition.lang = 'it-IT';
+    recognition.interimResults = false;
+
+    voiceSearchBtn.addEventListener('click', () => {
+        if (isListening) {
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    });
+
+    recognition.onstart = () => {
+        isListening = true;
+        micIcon.classList.add('text-green-500', 'mic-listening');
+        cardNameInput.placeholder = translations[activeLang].searchPlaceholder;
+    };
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+            cardNameInput.value = capitalizeWords(transcript);
+        } else {
+            cardNameInput.value = ''; // Clear input if no result
+        }
+        document.getElementById('searchCardBtn').click();
+    };
+
+    recognition.onend = () => {
+        isListening = false;
+        micIcon.classList.remove('text-green-500', 'mic-listening');
+        cardNameInput.placeholder = translations[activeLang].searchPlaceholder;
+    };
+
+    recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+        isListening = false;
+        micIcon.classList.remove('text-green-500', 'mic-listening');
+        showModal('modalSpeechError');
+    };
+} else {
+    // If the browser doesn't support Web Speech API
+    const voiceSearchBtn = document.getElementById('voiceSearchBtn');
+    const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
+    // Hide the mic icon and show the crossed-out icon
+    if (voiceSearchBtn) {
+        voiceSearchBtn.disabled = true;
+    }
+    if (micUnsupportedIcon) {
+        micUnsupportedIcon.classList.remove('hidden');
+    }
+    console.warn("Your browser does not support the Web Speech API.");
+}
+
+// Logic for tabs
+document.querySelectorAll('.tab-button').forEach(button => {
+    button.addEventListener('click', (e) => {
+        // Remove 'active' class from all buttons and hide all content
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'border-b-2'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+
+        // Add 'active' class to the clicked button and show corresponding content
+        e.target.classList.add('active');
+        const tabId = e.target.dataset.tab;
+        document.getElementById(tabId).classList.remove('hidden');
+        
+        const resultsSection = document.getElementById('resultsSection');
+        if (resultsSection) {
+            if (tabId === 'search-tab') {
+                resultsSection.classList.remove('hidden');
+                renderTable(); // Refresh the table when switching to this tab
+            } else {
+                resultsSection.classList.add('hidden');
+            }
+        }
+        
+        if (tabId === 'explore-tab' && allSets.length > 0) {
+            const setSelect = document.getElementById('setSelect');
+            if (setSelect.value) {
+                fetchAndRenderSetCards(setSelect.value);
+            }
+        }
+
+        if (tabId === 'decks-tab') {
+            renderDecksList();
+        }
+    });
+});
+
+// Event listener for the set select dropdown
+document.getElementById('setSelect').addEventListener('change', (e) => {
+    fetchAndRenderSetCards(e.target.value);
+});
+
+
+// Event listener for the API status button
+document.getElementById('statusBtn').addEventListener('click', () => {
+    let messageKey = '';
+    if (apiStatus === 'ready') {
+        messageKey = 'modalApiOk';
+    } else if (apiStatus === 'error') {
+        messageKey = 'modalApiError';
+    } else {
+        messageKey = 'modalApiConnecting';
+    }
+    showModal(messageKey);
+});
+
+// Event listener for the search button
+document.getElementById('cardNameInput').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        document.getElementById('searchCardBtn').click();
+    }
+});
+
+async function handleSearch() {
+    const cardNameInput = document.getElementById('cardNameInput');
+    const cardName = cardNameInput.value;
+    const searchCardBtn = document.getElementById('searchCardBtn');
+    
+    if (!cardName) {
+        showModal('modalNoCardName');
+        return;
+    }
+    
+    // Disable the button and show progress
+    searchCardBtn.disabled = true;
+    searchCardBtn.textContent = translations[activeLang]['searchAddBtn-loading']; // Use a loading translation
+    const progress = document.getElementById("progress");
+    const progressText = document.getElementById("progressText");
+    if (progress) progress.classList.remove('hidden');
+    if (progressText) progressText.textContent = `${translations[activeLang].processing} "${cardName}"...`;
+    
+    await findCardAndHandleResults(cardName);
+    
+    // Re-enable the button and hide progress
+    searchCardBtn.disabled = false;
+    searchCardBtn.textContent = translations[activeLang]['searchAddBtn-completed'];
+    if (progress) progress.classList.add('hidden');
+    
+    cardNameInput.value = '';
+}
+
+document.getElementById('searchCardBtn').addEventListener('click', handleSearch);
+
+document.getElementById('closeSelectionModalBtn').addEventListener('click', () => {
+    document.getElementById('cardSelectionModal').classList.add('hidden');
+});
+
+// Event listener for CSV file upload
+document.getElementById('processCsv').addEventListener('click', async () => {
+    const file = document.getElementById('csvFile').files[0];
+    const processCsvBtn = document.getElementById('processCsv');
+    if (!file) {
+        showModal('modalNoCardName');
+        return;
+    }
+
+    processCsvBtn.disabled = true;
+    processCsvBtn.textContent = translations[activeLang]['processCsvBtn-loading'];
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const text = e.target.result;
+        const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+        
+        const progress = document.getElementById("progress");
+        const progressText = document.getElementById("progressText");
+        if (progress) progress.classList.remove('hidden');
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            const [name, set] = line.split(';').map(s => s.trim());
+            
+            if (name) {
+                if (progressText) progressText.textContent = `${translations[activeLang].processing} ${i + 1}/${lines.length}: "${name}"...`;
+                const result = await findCardWithAPI({ name, set });
+
+                if (result.strategy !== 'not-found' && result.strategy !== 'api-error') {
+                    const selectedPrint = result.cardPrints.find(p => p.id === result.selectedPrintId);
+                    if (selectedPrint) {
+                        addCardToCollection({ ...selectedPrint, cardPrints: result.cardPrints });
+                    }
+                }
+            }
+        }
+        if (progress) progress.classList.add('hidden');
+        renderTable();
+        showModal('modalCsvComplete');
+        processCsvBtn.disabled = false;
+        processCsvBtn.textContent = translations[activeLang]['processCsvBtn-completed'];
+    };
+    reader.readAsText(file);
+});
+
+// Event listener for JSON save button
+document.getElementById('saveJsonBtn').addEventListener('click', () => {
+    if (searchResults.length === 0) {
+        showModal('modalNoCardsToSave');
+        return;
+    }
+
+    const exportData = searchResults.map(r => r.result);
+    const jsonString = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mtg_prices_data.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showModal('modalJsonSaved');
+});
+
+// Event listener for JSON load button
+document.getElementById('loadJsonFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        const progress = document.getElementById("progress");
+        const progressText = document.getElementById("progressText");
+        if (progress) progress.classList.remove('hidden');
+        if (progressText) progressText.textContent = translations[activeLang].processing;
+        try {
+            const data = JSON.parse(event.target.result);
+            if (Array.isArray(data)) {
+                const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+
+                // 1. Fetch all existing documents to delete them reliably
+                if (progressText) progressText.textContent = "Cancellazione della collezione esistente...";
+                const existingDocsSnapshot = await getDocs(collectionRef);
+                const deletePromises = existingDocsSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
+                
+                // 2. Wait for all deletions to complete
+                await Promise.all(deletePromises);
+                console.log("Existing collection cleared.");
+
+                // 3. Add new cards from JSON
+                if (progressText) progressText.textContent = "Aggiunta delle nuove carte...";
+                const addPromises = data.map(cardData => {
+                    const cardToSave = { ...cardData };
+                    delete cardToSave.cardPrints;
+                    return addDoc(collectionRef, cardToSave);
+                });
+
+                // 4. Wait for all additions to complete
+                await Promise.all(addPromises);
+                console.log("New cards added from JSON.");
+
+                showModal('modalCardsLoaded', false, null, null, { 'CARD_COUNT': data.length });
+                // The onSnapshot listener will automatically handle the table rendering.
+            } else {
+                showModal('modalInvalidJson');
+            }
+        } catch (error) {
+            console.error("Errore nel parsing o nel caricamento del JSON:", error);
+            showModal('modalJsonLoadError');
+        } finally {
+            if (progress) progress.classList.add('hidden');
+        }
+    };
+    reader.readAsText(file);
+});
+
+
+// Event listeners for table sorting
+document.querySelectorAll('#resultsTable .sortable').forEach(header => {
+  header.addEventListener('click', () => {
+    const column = header.dataset.sort;
+    let direction = 'asc';
+
+    // If it's the same column, reverse the direction
+    if (currentSort.column === column) {
+      direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    }
+
+    // Reset all sort icons
+    document.querySelectorAll('.sort-icon').forEach(icon => {
+        icon.className = 'sort-icon';
+    });
+
+    // Update the icon for the clicked header
+    const icon = header.querySelector('.sort-icon');
+    icon.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+
+    currentSort = { column, direction };
+
+    // Re-render the table with the new sort order
+    renderTable();
+  });
+});
+
+// Event listeners for color filters
+document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(checkbox => {
+    checkbox.addEventListener('change', (e) => {
+        const selectedColor = e.target.dataset.color;
+        
+        if (selectedColor === 'all' && e.target.checked) {
+            document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
+                c.checked = true;
+                c.closest('label').classList.add('checked');
+            });
+            activeFilters = ['all', 'W', 'U', 'B', 'R', 'G', 'multi', 'incolor'];
+        } else if (selectedColor === 'all' && !e.target.checked) {
+            document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
+                c.checked = false;
+                c.closest('label').classList.remove('checked');
+            });
+            activeFilters = [];
+        } else {
+            document.getElementById('filter-all').checked = false;
+            document.getElementById('filter-all').closest('label').classList.remove('checked');
+            
+            e.target.closest('label').classList.toggle('checked', e.target.checked);
+            
+            activeFilters = Array.from(document.querySelectorAll('.color-filter-label input:checked')).map(c => c.dataset.color);
+
+            // If no filters are active, re-select "all"
+            if (activeFilters.length === 0) {
+                document.getElementById('filter-all').checked = true;
+                document.getElementById('filter-all').closest('label').classList.add('checked');
+                activeFilters.push('all');
+            }
+        }
+        
+        renderTable();
+    });
+});
+
+// Event listener for language select dropdown
+document.getElementById('lang-select').addEventListener('change', (e) => {
+    activeLang = e.target.value;
+    updateUI(activeLang);
+    renderTable();
+});
+
+document.getElementById('closeDetailsModalBtn').addEventListener('click', () => {
+    document.getElementById('cardDetailsModal').classList.add('hidden');
+});
+
+// Deck Builder Logic
+async function addDeck(name) {
+    if (!db || !userId) return;
+    const decksRef = collection(db, `artifacts/${appId}/users/${userId}/decks`);
+    const newDeck = {
+        name,
+        cards: []
+    };
+    await addDoc(decksRef, newDeck);
+}
+
+async function updateDeck(deckId, data) {
+    if (!db || !userId) return;
+    const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
+    await updateDoc(deckDocRef, data);
+}
+
+function renderDecksList() {
+    const decksContainer = document.getElementById('decks-container');
+    decksContainer.innerHTML = '';
+    decks.forEach(deck => {
+        const deckCard = document.createElement('div');
+        deckCard.className = 'bg-gray-100 p-4 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer relative group';
+        deckCard.innerHTML = `
+            <div class="flex items-center justify-between">
+                <h3 class="font-bold text-gray-900">${deck.name}</h3>
+                <button class="delete-deck-btn text-red-500 hover:text-red-700 p-1" data-deck-id="${deck.id}">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" class="w-5 h-5">
+                        <path fill-rule="evenodd" d="M8.75 1A2.75 2.75 0 0 0 6 3.75v.443c-.795.077-1.58.275-2.332.574a.75.75 0 0 0-.708 1.442 4.95 4.95 0 0 1-.954-.337A.75.75 0 0 0 2 6.34v3.832c0 .299.176.551.435.65a4.996 4.996 0 0 1 2.158.74c1.171.463 2.502.68 3.864.68s2.693-.217 3.864-.68a4.996 4.996 0 0 1 2.158-.74c.259-.099.435-.351.435-.65V6.34a.75.75 0 0 0-.256-.56c-.328-.276-.667-.52-1.011-.734-1.287-.798-2.641-1.3-4.041-1.378V3.75A2.75 2.75 0 0 0 8.75 1h2.5A2.75 2.75 0 0 0 14 3.75v.443a29.897 29.897 0 0 1-.36 3.25.75.75 0 0 0 .25.748l1.793 1.792a.75.75 0 1 0 1.06-1.06l-1.66-1.66c.216-.499.42-.992.605-1.488.17-.45.245-.91.228-1.373A.75.75 0 0 0 17 4.193V3.75A4.25 4.25 0 0 0 12.75 0h-2.5A4.25 4.25 0 0 0 6 3.75v.443a29.897 29.897 0 0 1-.36 3.25.75.75 0 0 0 .25.748l1.793 1.792a.75.75 0 1 0 1.06-1.06L7.94 10l-1.66-1.66c.216-.499.42-.992.605-1.488.17-.45.245-.91.228-1.373A.75.75 0 0 0 7 4.193V3.75A2.75 2.75 0 0 1 8.75 1Z" clip-rule="evenodd" />
+                    </svg>
+                </button>
+            </div>
+            <p class="text-sm text-gray-600">${deck.cards ? deck.cards.length : 0} carte</p>
+        `;
+        deckCard.addEventListener('click', (e) => {
+            if (!e.target.closest('.delete-deck-btn')) {
+                enterDeckEditor(deck.id);
+            }
+        });
+        deckCard.querySelector('.delete-deck-btn').addEventListener('click', (e) => {
+             showModal('modalRemoveCard', true, async () => {
+                if (!db || !userId) return;
+                const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deck.id);
+                await deleteDoc(deckDocRef);
+             });
+        });
+        decksContainer.appendChild(deckCard);
+    });
+}
+
+function enterDeckEditor(deckId) {
+    currentDeckId = deckId;
+    currentDeck = decks.find(d => d.id === deckId);
+    if (!currentDeck) {
+        return;
+    }
+    document.getElementById('decks-list').classList.add('hidden');
+    document.getElementById('deck-editor').classList.remove('hidden');
+    
+    const deckEditorNameInput = document.getElementById('deck-editor-name-input');
+    deckEditorNameInput.value = currentDeck.name;
+    deckEditorNameInput.addEventListener('change', async (e) => {
+        await updateDeck(currentDeckId, { name: e.target.value });
+    });
+
+    renderDeckCards();
+    renderCollectionCards();
+}
+
+function renderDeckCards() {
+    const deckListContainer = document.getElementById('deck-list-container');
+    deckListContainer.innerHTML = '';
+    (currentDeck.cards || []).forEach(card => {
+        const cardItem = document.createElement('div');
+        cardItem.className = 'flex items-center justify-between p-2 bg-gray-200 rounded-lg';
+        const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
+        cardItem.innerHTML = `
+            <span>${cardName}</span>
+            <button class="remove-from-deck-btn bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full" data-card-id="${card.id}">Rimuovi</button>
+        `;
+        cardItem.querySelector('.remove-from-deck-btn').addEventListener('click', async () => {
+            removeCardFromDeck(card.id);
+        });
+        deckListContainer.appendChild(cardItem);
+    });
+}
+
+async function renderCollectionCards() {
+    const collectionCardsGrid = document.getElementById('collection-cards-grid');
+    const collectionSearchInput = document.getElementById('collectionSearchInput');
+    const searchTerm = collectionSearchInput.value.toLowerCase();
+    collectionCardsGrid.innerHTML = '';
+    
+    const filteredCollection = searchResults.filter(card => {
+        const cardName = card.result.printed_name || card.result.name;
+        return cardName.toLowerCase().includes(searchTerm);
+    });
+    
+    filteredCollection.forEach(card => {
+        const cardElement = document.createElement('div');
+        cardElement.className = 'collection-card-tile p-2 bg-gray-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer';
+        const imageUrl = card.result.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
+        const cardName = activeLang === 'ita' ? (card.result.printed_name || card.result.name) : card.result.name;
+        
+        cardElement.innerHTML = `
+            <img src="${imageUrl}" alt="${cardName}" class="w-full rounded-lg mb-2">
+            <p class="text-sm text-center font-semibold text-gray-800">${cardName}</p>
+        `;
+        cardElement.addEventListener('click', () => {
+            addCardToDeck(card.result);
+        });
+        collectionCardsGrid.appendChild(cardElement);
+    });
+}
+
+async function addCardToDeck(cardData) {
+    if (currentDeckId && db && userId) {
+        const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, currentDeckId);
+        const updatedCards = [...(currentDeck.cards || []), cardData];
+        await updateDoc(deckDocRef, { cards: updatedCards });
+    }
+}
+
+async function removeCardFromDeck(cardId) {
+    if (currentDeckId && db && userId) {
+        const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, currentDeckId);
+        const cardIndex = currentDeck.cards.findIndex(card => card.id === cardId);
+        if (cardIndex > -1) {
+            const updatedCards = [...currentDeck.cards];
+            updatedCards.splice(cardIndex, 1);
+            await updateDoc(deckDocRef, { cards: updatedCards });
+        }
+    }
+}
+
+async function removeCardFromAllDecks(cardId) {
+    if (!db || !userId) return;
+    const allDecks = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/decks`)));
+    allDecks.docs.forEach(async deckDoc => {
+        const deck = { id: deckDoc.id, ...deckDoc.data() };
+        const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deck.id);
+        const updatedCards = deck.cards.filter(card => card.id !== cardId);
+        if (updatedCards.length !== deck.cards.length) {
+            await updateDoc(deckDocRef, { cards: updatedCards });
+        }
+    });
+}
+
+// Event listeners for Deck builder
+document.getElementById('createDeckBtn').addEventListener('click', async () => {
+    const deckNameInput = document.getElementById('newDeckNameInput');
+    const deckName = deckNameInput.value.trim();
+    if (deckName) {
+        await addDeck(deckName);
+        deckNameInput.value = '';
+    }
+});
+
+document.getElementById('backToDecksBtn').addEventListener('click', () => {
+    currentDeck = null;
+    currentDeckId = null;
+    document.getElementById('decks-list').classList.remove('hidden');
+    document.getElementById('deck-editor').classList.add('hidden');
+    renderDecksList(); // Rerender the list to show the updated card counts
+});
+
+document.getElementById('collectionSearchInput').addEventListener('input', () => {
+    renderCollectionCards();
+});
+
+// Update the tab change logic to show/hide the results section
+document.querySelectorAll('.tab-button').forEach(button => {
+    button.addEventListener('click', (e) => {
+        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'border-b-2'));
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
+
+        e.target.classList.add('active');
+        const tabId = e.target.dataset.tab;
+        document.getElementById(tabId).classList.remove('hidden');
+        
+        const resultsSection = document.getElementById('resultsSection');
+        if (resultsSection) {
+            if (tabId === 'search-tab') {
+                resultsSection.classList.remove('hidden');
+            } else {
+                resultsSection.classList.add('hidden');
+            }
+        }
+        
+        if (tabId === 'explore-tab' && allSets.length > 0) {
+            const setSelect = document.getElementById('setSelect');
+            if (setSelect.value) {
+                fetchAndRenderSetCards(setSelect.value);
+            }
+        }
+
+        if (tabId === 'decks-tab') {
+            renderDecksList();
+        }
+    });
+});
+
+window.onload = () => {
+  fetchSets();
+};
+</script>
+
