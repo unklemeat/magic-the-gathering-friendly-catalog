@@ -8,22 +8,12 @@ import {
 import {
   initializeFirebase,
   authenticateUser,
-  addCardToCollection as firebaseAddCardToCollection,
-  updateCardInCollection,
-  removeCardFromCollection,
-  fetchCollectionPage,
-  getAllCollectionCards,
   setupDecksListener,
   addDeck as firebaseAddDeck,
   updateDeck as firebaseUpdateDeck,
-  deleteDeck as firebaseDeleteDeck,
   addCardToDeck as firebaseAddCardToDeck,
   removeCardFromDeck as firebaseRemoveCardFromDeck,
-  removeCardFromAllDecksByOracleId,
-  exportDecks as firebaseExportDecks,
-  importDecks as firebaseImportDecks,
-  getFirebaseInstances,
-  isFirebaseInitialized
+  importDecks as firebaseImportDecks
 } from './modules/firebase.js';
 import {
   updateUI,
@@ -31,43 +21,23 @@ import {
   showSearchResultsModal,
   showCardDetailsModal,
   showModal,
-  addRow,
-  reindexRows,
-  renderTable,
   renderDecksList,
   enterDeckEditor,
   renderDeckCards,
-  renderCollectionCards,
-  toggleProgress,
-  updateProgressText,
-  setActiveTab
+  renderCollectionCards
 } from './modules/ui.js';
 import {
   findCardAndHandleResults,
   populateSetSelect,
   handleSearchWithUI,
-  setupVoiceSearch
+  setupVoiceSearch,
+  clearAllFilters,
+  validateSearchInput
 } from './modules/searchFilter.js';
 import {
   addCardToCollection as collectionAddCardToCollection,
-  deleteCardFromCollection,
   fetchAndRenderCollectionPage as collectionFetchAndRenderCollectionPage,
-  calculateAndDisplayTotalValue as collectionCalculateAndDisplayTotalValue,
-  renderCollectionCards as collectionRenderCollectionCards,
-  addCardToDeck as collectionAddCardToDeck,
-  removeCardFromDeck as collectionRemoveCardFromDeck,
-  removeCardFromAllDecksByOracleId as collectionRemoveCardFromAllDecksByOracleId,
-  handleSetChange as collectionHandleSetChange,
-  handleDeleteCard as collectionHandleDeleteCard,
-  processCsvFile,
-  processJsonFile,
-  exportCollectionToJson,
-  exportDecksToJson,
-  handlePagination,
-  handlePageSizeChange,
-  handleCollectionSearch,
-  resetCollectionFilters,
-  getCollectionStatistics
+  calculateAndDisplayTotalValue as collectionCalculateAndDisplayTotalValue
 } from './modules/collectionManagement.js';
 
 
@@ -171,10 +141,6 @@ if (firebaseInstances) {
     console.error("Configurazione Firebase mancante! Inseriscila in 'localFirebaseConfig' per l'esecuzione locale.");
 }
 
-
-// Translations are now imported from the translations module
-
-
 // Table sorting variables
 let currentSort = { column: null, direction: 'asc' };
 
@@ -248,7 +214,6 @@ async function fetchAndRenderSetCards(setCode) {
 }
 
 
-
 function showSearchResultsModalLocal(cards) {
     showSearchResultsModal(cards, async (card) => {
         const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
@@ -280,9 +245,6 @@ async function addCardToCollection(cardData) {
     );
 }
 
-
-// Helper to map sort column to firestore field name
-// getSortableField is now imported from searchFilter module
 
 // Main function to fetch and render a page of the collection
 async function fetchAndRenderCollectionPageLocal(direction = 'first') {
@@ -457,6 +419,13 @@ document.getElementById('cardNameInput').addEventListener('keydown', (event) => 
 async function handleSearch() {
     const cardNameInput = document.getElementById('cardNameInput');
     const cardName = cardNameInput.value;
+    
+    // Validate input using the proper validation function
+    const validation = validateSearchInput(cardName);
+    if (!validation.isValid) {
+        showModalLocal(validation.message);
+        return;
+    }
     
     await handleSearchWithUI(
         cardName,
@@ -721,12 +690,16 @@ document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(
         const selectedColor = e.target.dataset.color;
         
         if (selectedColor === 'all' && e.target.checked) {
-            document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
-                c.checked = true;
-                c.closest('label').classList.add('checked');
+            // Use clearAllFilters function
+            activeFilters = clearAllFilters((defaultFilters) => {
+                // Update DOM to reflect all filters are checked
+                document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
+                    c.checked = true;
+                    c.closest('label').classList.add('checked');
+                });
             });
-            activeFilters = ['all', 'W', 'U', 'B', 'R', 'G', 'multi', 'incolor'];
         } else if (selectedColor === 'all' && !e.target.checked) {
+            // Clear all filters
             document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
                 c.checked = false;
                 c.closest('label').classList.remove('checked');
