@@ -46,6 +46,7 @@ import {
 } from './modules/collectionManagement.js';
 import { setupEventListeners } from './modules/events.js';
 import * as state from './modules/state.js';
+import { initAuth } from './modules/login.js';
 
 
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
@@ -715,6 +716,9 @@ const eventHandlers = {
 // --- APP START ---
 // =================================================================================================
 window.onload = () => {
+  // Initialize authentication first
+  initAuth();
+  
   // Initialize event listeners after DOM is ready
   setupEventListeners(eventHandlers);
   

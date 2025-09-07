@@ -8,19 +8,9 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs, limit, startAfter, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getConfig, validateConfig } from './config.js';
 
 setLogLevel('debug');
-
-// Firebase configuration
-const localFirebaseConfig = {
-  apiKey: "REMOVED_API_KEY",
-  authDomain: "REMOVED_PROJECT_ID.firebaseapp.com",
-  projectId: "REMOVED_PROJECT_ID",
-  storageBucket: "REMOVED_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "REMOVED_SENDER_ID",
-  appId: "1:REMOVED_SENDER_ID:web:283dbf5a1e604f7b731555",
-  measurementId: "REMOVED_MEASUREMENT_ID"
-};
 
 // Global Firebase instances
 let app;
@@ -28,9 +18,10 @@ let db;
 let auth;
 let analytics;
 
-// App configuration
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : localFirebaseConfig;
+// Get configuration from environment
+const config = getConfig();
+const firebaseConfig = config.firebase;
+const appId = config.app.appId;
 const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
 /**
@@ -38,15 +29,22 @@ const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial
  * @returns {Object} Firebase instances { app, db, auth, analytics }
  */
 export function initializeFirebase() {
-  if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
+  // Validate configuration
+  if (!validateConfig(config)) {
+    console.error("Invalid Firebase configuration. Please check your environment variables.");
+    return null;
+  }
+  
+  try {
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     auth = getAuth(app);
     analytics = getAnalytics(app);
     
+    console.log("Firebase initialized successfully");
     return { app, db, auth, analytics };
-  } else {
-    console.warn("Firebase configuration not found. Running in offline mode.");
+  } catch (error) {
+    console.error("Failed to initialize Firebase:", error);
     return null;
   }
 }

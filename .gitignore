@@ -144,3 +144,9 @@ vite.config.ts.timestamp-*
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# Environment variables (contains sensitive data)
+.env
+.env.local
+.env.production
+.env.development
