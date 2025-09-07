@@ -50,6 +50,25 @@ import {
   updateProgressText,
   setActiveTab
 } from './modules/ui.js';
+import {
+  findCardAndHandleResults,
+  getSortableField,
+  filterCardsByColor,
+  filterCardsBySearchTerm,
+  sortCards,
+  populateSetSelect,
+  handleSearch,
+  handleSetSelection,
+  handleFilterChange,
+  handleSortChange,
+  processCsvData,
+  processJsonData,
+  exportToJson,
+  setupVoiceSearch,
+  clearAllFilters,
+  getFilterDisplayName,
+  validateSearchInput
+} from './modules/searchFilter.js';
 
 
 let allSets = [];
@@ -170,7 +189,7 @@ async function loadSets() {
     allSets = await fetchSets();
     if (allSets.length > 0) {
       updateApiStatusLocal('ready', 'apiStatusReady');
-      populateSetSelect();
+      populateSetSelectLocal();
     } else {
       updateApiStatusLocal('error', 'apiStatusError');
     }
@@ -181,15 +200,8 @@ async function loadSets() {
 }
 
 // Populate the set selector
-function populateSetSelect() {
-  const setSelect = document.getElementById('setSelect');
-  setSelect.innerHTML = ''; // Clear existing options
-  allSets.forEach(set => {
-    const option = document.createElement('option');
-    option.value = set.code;
-    option.textContent = set.name;
-    setSelect.appendChild(option);
-  });
+function populateSetSelectLocal() {
+  populateSetSelect(allSets, activeLang);
 }
 
 // Function to fetch and render cards for a specific set
@@ -234,39 +246,12 @@ async function fetchAndRenderSetCards(setCode) {
 
 
 // New unified search function
-async function findCardAndHandleResults(cardName) {
-    const formattedName = cardName.trim();
-    
-    // Step 1: Strict search for exact match
-    const exactResult = await searchCardsExact(formattedName, activeLang);
-
-    if (exactResult && exactResult.data && exactResult.data.length > 0) {
-        const exactMatches = exactResult.data.filter(card => normalizeName(card.name) === normalizeName(formattedName) || (card.printed_name && normalizeName(card.printed_name) === normalizeName(formattedName)));
-        
-        if (exactMatches.length === 1) {
-            const card = exactMatches[0];
-            const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
-            addCardToCollection({ ...card, cardPrints: allPrints });
-            return;
-        } else if (exactMatches.length > 1) {
-                        showSearchResultsModalLocal(exactMatches);
-            return;
-        }
-    }
-    
-    // Step 2: Fuzzy search as a fallback if no exact match is found
-    const namedResult = await searchCardFuzzy(formattedName);
-    
-    if (namedResult && namedResult.object === "card") {
-      const allPrints = await fetchAllPrintsByOracleId(namedResult.oracle_id);
-      
-      if (allPrints.length > 0) {
-                    showSearchResultsModalLocal(allPrints);
-        return;
-      }
-    }
-    
-    showModalLocal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` });
+async function findCardAndHandleResultsLocal(cardName) {
+    await findCardAndHandleResults(cardName, activeLang, 
+        (card) => addCardToCollection(card),
+        (cards) => showSearchResultsModalLocal(cards),
+        (cardName) => showModalLocal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` })
+    );
 }
 
 function showSearchResultsModalLocal(cards) {
@@ -544,17 +529,7 @@ function renderTable() {
 }
 
 // Helper to map sort column to firestore field name
-function getSortableField(column) {
-    switch (column) {
-        case 'ita-name': return 'printed_name';
-        case 'eng-name': return 'name';
-        case 'set': return 'set_name';
-        case 'eur-price': return 'prices.eur';
-        case 'usd-price': return 'prices.usd';
-        // Note: Sorting by color is complex with Firestore and is not implemented server-side.
-        default: return 'name'; // Default sort field
-    }
-}
+// getSortableField is now imported from searchFilter module
 
 // Function to build the base query with current filters and sorting
 function buildLocalCollectionQuery() {
@@ -786,7 +761,7 @@ async function handleSearch() {
     if (progress) progress.classList.remove('hidden');
     if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} "${cardName}"...`;
     
-    await findCardAndHandleResults(cardName);
+        await findCardAndHandleResultsLocal(cardName);
     
     // Re-enable the button and hide progress
     searchCardBtn.disabled = false;
