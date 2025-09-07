@@ -1,8 +1,3 @@
-import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs, limit, startAfter, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
-import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getTranslation } from './modules/translations.js';
 import { 
   rateLimitedRequest, 
@@ -15,8 +10,28 @@ import {
   normalizeName, 
   capitalizeWords 
 } from './modules/scryfallApi.js';
+import {
+  initializeFirebase,
+  authenticateUser,
+  addCardToCollection as firebaseAddCardToCollection,
+  updateCardInCollection,
+  removeCardFromCollection,
+  buildBaseCollectionQuery,
+  fetchCollectionPage,
+  getAllCollectionCards,
+  setupDecksListener,
+  addDeck as firebaseAddDeck,
+  updateDeck as firebaseUpdateDeck,
+  deleteDeck as firebaseDeleteDeck,
+  addCardToDeck as firebaseAddCardToDeck,
+  removeCardFromDeck as firebaseRemoveCardFromDeck,
+  removeCardFromAllDecksByOracleId,
+  exportDecks as firebaseExportDecks,
+  importDecks as firebaseImportDecks,
+  getFirebaseInstances,
+  isFirebaseInitialized
+} from './modules/firebase.js';
 
-setLogLevel('debug');
 
 let allSets = [];
 let searchResults = [];
@@ -47,46 +62,24 @@ let cardsPerPage = 50;
 // 2. Nelle impostazioni del progetto (icona ingranaggio), crea una "Web App".
 // 3. Copia l'oggetto di configurazione (inizia con "const firebaseConfig = {") e incollalo qui sotto,
 //    sostituendo l'oggetto 'localFirebaseConfig'.
-const localFirebaseConfig = {
-  apiKey: "REMOVED_API_KEY",
-  authDomain: "REMOVED_PROJECT_ID.firebaseapp.com",
-  projectId: "REMOVED_PROJECT_ID",
-  storageBucket: "REMOVED_PROJECT_ID.firebasestorage.app",
-  messagingSenderId: "REMOVED_SENDER_ID",
-  appId: "1:REMOVED_SENDER_ID:web:283dbf5a1e604f7b731555",
-  measurementId: "REMOVED_MEASUREMENT_ID"
-};
-
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : localFirebaseConfig;
-const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-// Controlla se la configurazione di Firebase è valida
-if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
-    const app = initializeApp(firebaseConfig);
-    db = getFirestore(app);
-    auth = getAuth(app);
+// Initialize Firebase
+const firebaseInstances = initializeFirebase();
+if (firebaseInstances) {
+    const { app, db: firebaseDb, auth: firebaseAuth } = firebaseInstances;
+    db = firebaseDb;
+    auth = firebaseAuth;
     
-    // Esegui l'autenticazione
-    if (initialAuthToken) {
-        signInWithCustomToken(auth, initialAuthToken).catch(error => {
-            console.error("Error signing in with custom token:", error);
-            signInAnonymously(auth); // Fallback ad anonimo se il token non è valido
-        });
-    } else {
-        signInAnonymously(auth);
-    }
-    
-    // Listener per i cambiamenti di stato dell'autenticazione
-    onAuthStateChanged(auth, async (user) => {
+    // Set up authentication
+    authenticateUser(async (user) => {
         if (user) {
             userId = user.uid;
             console.log("User authenticated:", userId);
             
-            // Imposta i listener in tempo reale per i mazzi
-            const decksQuery = query(collection(db, `artifacts/${appId}/users/${userId}/decks`));
-            onSnapshot(decksQuery, (snapshot) => {
-                decks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            // Set up real-time listener for decks
+            setupDecksListener(userId, (decksData) => {
+                decks = decksData;
                 console.log("Decks loaded:", decks);
                 const activeButton = document.querySelector('.tab-button.active');
                 if (!activeButton) return;
@@ -385,25 +378,15 @@ function showModal(messageKey, showCancel = false, onOk = null, onCancel = null,
 
 // Function to add a card to the collection table
 async function addCardToCollection(cardData) {
-    if (!db || !userId) {
-        console.error("Firebase is not initialized or user is not authenticated.");
-        return;
-    }
-    
-    const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
-    
-    try {
-        const cardToSave = { ...cardData };
-        delete cardToSave.cardPrints; // Remove the large array to avoid exceeding size limit
-        await addDoc(collectionRef, cardToSave);
-        console.log("Card added to Firestore collection:", cardToSave.name);
+    const success = await firebaseAddCardToCollection(userId, cardData);
+    if (success) {
+        console.log("Card added to Firestore collection:", cardData.name);
         
         // Always refresh the first page to show the new card.
         fetchAndRenderCollectionPage('first');
         calculateAndDisplayTotalValue();
-
-    } catch (e) {
-        console.error("Error adding card to collection:", e);
+    } else {
+        console.error("Error adding card to collection");
     }
 }
 
@@ -565,7 +548,7 @@ function addRow(data, uniqueId) {
 
             document.getElementById('deleteAllBtn').onclick = async () => {
                 await deleteCardFromCollection();
-                await removeCardFromAllDecksByOracleId(cardOracleId);
+                await removeCardFromAllDecksByOracleIdLocal(cardOracleId);
                 modal.classList.add('hidden');
                 restoreModalButtons();
             };
@@ -662,27 +645,9 @@ function getSortableField(column) {
 }
 
 // Function to build the base query with current filters and sorting
-function buildBaseCollectionQuery() {
-    if (!db || !userId) return null;
-    let q = collection(db, `artifacts/${appId}/users/${userId}/collection`);
-    let baseConstraints = [];
-
+function buildLocalCollectionQuery() {
     const searchTerm = document.getElementById('collectionFilterInput').value.trim();
-
-    if (searchTerm) {
-        const capitalizedSearchTerm = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1);
-        baseConstraints.push(orderBy('name'));
-        baseConstraints.push(where('name', '>=', capitalizedSearchTerm));
-        baseConstraints.push(where('name', '<=', capitalizedSearchTerm + '\uf8ff'));
-    } else if (currentSort.column) {
-        const direction = currentSort.direction;
-        const field = getSortableField(currentSort.column);
-        baseConstraints.push(orderBy(field, direction));
-    } else {
-        baseConstraints.push(orderBy('name', 'asc')); // Default sort order
-    }
-    
-    return query(q, ...baseConstraints);
+    return buildBaseCollectionQuery(userId, searchTerm);
 }
 
 // Main function to fetch and render a page of the collection
@@ -690,62 +655,24 @@ async function fetchAndRenderCollectionPage(direction = 'first') {
     if (!db) return;
     document.getElementById("progress").classList.remove('hidden');
     
-    let baseQuery = buildBaseCollectionQuery();
-    let pageQuery;
-
-    if (direction === 'first') {
-        currentPage = 1;
-        pageFirstDocs = [null];
-        pageQuery = query(baseQuery, limit(cardsPerPage));
-    } else if (direction === 'next') {
-        if (!lastVisible) { 
-            document.getElementById("progress").classList.add('hidden');
-            return; 
-        }
-        pageQuery = query(baseQuery, startAfter(lastVisible), limit(cardsPerPage));
-    } else if (direction === 'prev') {
-        if (currentPage <= 1) {
-             document.getElementById("progress").classList.add('hidden');
-            return;
-        }
-        pageFirstDocs.pop(); 
-        const prevPageStart = pageFirstDocs[pageFirstDocs.length - 1];
-        if (prevPageStart) {
-            pageQuery = query(baseQuery, startAfter(prevPageStart), limit(cardsPerPage));
-        } else {
-            pageQuery = query(baseQuery, limit(cardsPerPage));
-        }
-    } else { // 'current'
-         const prevPageStart = pageFirstDocs[pageFirstDocs.length - 1];
-         if (prevPageStart) {
-            pageQuery = query(baseQuery, startAfter(prevPageStart), limit(cardsPerPage));
-         } else {
-            pageQuery = query(baseQuery, limit(cardsPerPage));
-         }
-    }
-
-
     try {
-        const documentSnapshots = await getDocs(pageQuery);
-
-        if (!documentSnapshots.empty) {
+        const pageData = await fetchCollectionPage(userId, direction, cardsPerPage, pageFirstDocs, lastVisible);
+        
+        if (pageData.cards.length > 0) {
             if (direction === 'next') {
                 currentPage++;
-                pageFirstDocs.push(documentSnapshots.docs[0]);
+                pageFirstDocs.push(pageData.firstVisible);
             } else if (direction === 'prev') {
                 currentPage--;
             }
-             firstVisible = documentSnapshots.docs[0];
-             lastVisible = documentSnapshots.docs[documentSnapshots.docs.length - 1];
-        } else if (direction !== 'first') {
-             // If we're not on the first page and get no results, it means we're past the end.
-             // Don't change the current page.
+            firstVisible = pageData.firstVisible;
+            lastVisible = pageData.lastVisible;
         }
         
-        searchResults = documentSnapshots.docs.map(doc => ({ id: doc.id, result: doc.data() }));
+        searchResults = pageData.cards;
         
         renderTable(); 
-        updatePaginationUI(documentSnapshots.size);
+        updatePaginationUI(pageData.cards.length);
 
     } catch (error) {
         console.error("Error fetching collection page:", error);
@@ -1116,23 +1043,15 @@ document.getElementById('loadDecksFile').addEventListener('change', (e) => {
         try {
             const data = JSON.parse(event.target.result);
             if (Array.isArray(data)) { 
-                const decksRef = collection(db, `artifacts/${appId}/users/${userId}/decks`);
-
-                if (progressText) progressText.textContent = "Cancellazione dei mazzi esistenti...";
-                const existingDecksSnapshot = await getDocs(decksRef);
-                const deletePromises = existingDecksSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
-                await Promise.all(deletePromises);
-                console.log("Existing decks cleared.");
-
-                if (progressText) progressText.textContent = "Aggiunta dei nuovi mazzi...";
-                const addPromises = data.map(deckData => {
-                    const { id, ...deckToSave } = deckData;
-                    return addDoc(decksRef, deckToSave);
-                });
-                await Promise.all(addPromises);
-                console.log("New decks added from JSON.");
-
-                showModal('modalDecksLoaded', false, null, null, { 'DECK_COUNT': data.length });
+                if (progressText) progressText.textContent = "Importazione dei mazzi...";
+                
+                const success = await firebaseImportDecks(userId, data);
+                if (success) {
+                    console.log("New decks added from JSON.");
+                    showModal('modalDecksLoaded', false, null, null, { 'DECK_COUNT': data.length });
+                } else {
+                    showModal('modalJsonLoadError');
+                }
             } else {
                 showModal('modalInvalidDecksJson');
             }
@@ -1223,19 +1142,11 @@ document.getElementById('closeDetailsModalBtn').addEventListener('click', () => 
 
 // Deck Builder Logic
 async function addDeck(name) {
-    if (!db || !userId) return;
-    const decksRef = collection(db, `artifacts/${appId}/users/${userId}/decks`);
-    const newDeck = {
-        name,
-        cards: []
-    };
-    await addDoc(decksRef, newDeck);
+    await firebaseAddDeck(userId, name);
 }
 
 async function updateDeck(deckId, data) {
-    if (!db || !userId) return;
-    const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
-    await updateDoc(deckDocRef, data);
+    await firebaseUpdateDeck(userId, deckId, data);
 }
 
 function renderDecksList() {
@@ -1348,46 +1259,19 @@ async function renderCollectionCards() {
 
 async function addCardToDeck(cardData) {
     if (currentDeckId && db && userId) {
-        const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, currentDeckId);
-        const updatedCards = [...(currentDeck.cards || []), cardData];
-        await updateDoc(deckDocRef, { cards: updatedCards });
+        await firebaseAddCardToDeck(userId, currentDeckId, cardData, currentDeck.cards || []);
     }
 }
 
 async function removeCardFromDeck(cardId) {
     if (currentDeckId && db && userId) {
-        const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, currentDeckId);
-        const cardIndex = currentDeck.cards.findIndex(card => card.id === cardId);
-        if (cardIndex > -1) {
-            const updatedCards = [...currentDeck.cards];
-            updatedCards.splice(cardIndex, 1);
-            await updateDoc(deckDocRef, { cards: updatedCards });
-        }
+        await firebaseRemoveCardFromDeck(userId, currentDeckId, cardId, currentDeck.cards || []);
     }
 }
 
-async function removeCardFromAllDecksByOracleId(oracleId) {
-    if (!db || !userId || !oracleId) return;
-
-    const decksRef = collection(db, `artifacts/${appId}/users/${userId}/decks`);
-    const decksSnapshot = await getDocs(decksRef);
-    const updatePromises = [];
-
-    decksSnapshot.forEach(deckDoc => {
-        const deckData = deckDoc.data();
-        if (deckData.cards && Array.isArray(deckData.cards)) {
-            const originalCardCount = deckData.cards.length;
-            const updatedCards = deckData.cards.filter(card => card.oracle_id !== oracleId);
-
-            if (updatedCards.length < originalCardCount) {
-                const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckDoc.id);
-                updatePromises.push(updateDoc(deckDocRef, { cards: updatedCards }));
-            }
-        }
-    });
-
-    await Promise.all(updatePromises);
-    console.log(`Card with oracle_id ${oracleId} removed from all relevant decks.`);
+async function removeCardFromAllDecksByOracleIdLocal(oracleId) {
+    const updatedDecksCount = await removeCardFromAllDecksByOracleId(userId, oracleId);
+    console.log(`Card with oracle_id ${oracleId} removed from ${updatedDecksCount} decks.`);
 }
 
 // Event listeners for Deck builder
