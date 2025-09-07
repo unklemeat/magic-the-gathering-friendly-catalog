@@ -53,7 +53,8 @@ jest.mock('../public/js/modules/ui.js', () => ({
   calculateAndDisplayTotalValue: jest.fn(),
   renderCollectionCards: jest.fn(),
   toggleProgress: jest.fn(),
-  updateProgressText: jest.fn()
+  updateProgressText: jest.fn(),
+  showModal: jest.fn()
 }));
 
 jest.mock('../public/js/modules/searchFilter.js', () => ({
@@ -175,7 +176,7 @@ describe('Collection Management Module', () => {
       );
       
       expect(toggleProgress).toHaveBeenCalledWith(true);
-      expect(fetchCollectionPage).toHaveBeenCalledWith('user123', 'first', 50, [null], null);
+      expect(fetchCollectionPage).toHaveBeenCalledWith('user123', 'first', 50, [null], null, '');
       expect(renderTable).toHaveBeenCalled();
       expect(updatePaginationUI).toHaveBeenCalled();
       expect(onSuccess).toHaveBeenCalledWith(mockPageData.cards);
@@ -306,17 +307,17 @@ describe('Collection Management Module', () => {
 
   describe('handleDeleteCard', () => {
     test('should handle card deletion successfully', async () => {
-      const { removeCardFromCollection } = require('../public/js/modules/firebase.js');
-      
-      removeCardFromCollection.mockResolvedValue();
+      const { showModal } = require('../public/js/modules/ui.js');
       
       const onSuccess = jest.fn();
       const onError = jest.fn();
+      const mockDecks = [];
+      const mockSearchResults = [{ id: 'card123', result: { oracle_id: 'oracle123' } }];
       
-      await handleDeleteCard('card123', 'user123', onSuccess, onError);
+      await handleDeleteCard('card123', 'user123', 'app123', mockDecks, mockSearchResults, onSuccess, onError);
       
-      expect(removeCardFromCollection).toHaveBeenCalledWith('user123', 'card123');
-      expect(onSuccess).toHaveBeenCalled();
+      // Since the card is not in any decks, it should show the simple confirmation modal
+      expect(showModal).toHaveBeenCalledWith('modalRemoveCard', true, expect.any(Function), null, {}, 'ita');
       expect(onError).not.toHaveBeenCalled();
     });
   });

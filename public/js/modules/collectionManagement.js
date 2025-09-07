@@ -20,7 +20,8 @@ import {
   calculateAndDisplayTotalValue as uiCalculateAndDisplayTotalValue,
   renderCollectionCards as uiRenderCollectionCards,
   toggleProgress,
-  updateProgressText
+  updateProgressText,
+  showModal
 } from './ui.js';
 import { 
   processCsvData,
@@ -82,11 +83,11 @@ export async function deleteCardFromCollection(cardId, userId, onSuccess, onErro
  * @param {Function} onError - Callback for errors
  * @returns {Object} Updated pagination state
  */
-export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError) {
+export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError, appId = null, decks = [], searchResults = [], searchTerm = '') {
     toggleProgress(true);
     
     try {
-        const pageData = await fetchCollectionPage(userId, direction, cardsPerPage, pageFirstDocs, lastVisible);
+        const pageData = await fetchCollectionPage(userId, direction, cardsPerPage, pageFirstDocs, lastVisible, searchTerm);
         
         let newCurrentPage = currentPage;
         let newPageFirstDocs = [...pageFirstDocs];
@@ -105,9 +106,19 @@ export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPa
         }
         
         // Render the table with the fetched data
+        const deleteHandler = createDeleteCardHandler(
+            userId, appId, decks, searchResults, 
+            () => {
+                // Refresh the page after deletion
+                fetchAndRenderCollectionPage('current', userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError, appId, decks, searchResults);
+            },
+            onError,
+            activeLang
+        );
+        
         renderTable(pageData.cards, activeFilters, activeLang, 
             (e, uniqueId) => handleSetChange(e, uniqueId, userId),
-            (uniqueId) => handleDeleteCard(uniqueId, userId),
+            deleteHandler,
             newCurrentPage, cardsPerPage
         );
         
@@ -248,20 +259,86 @@ export async function handleSetChange(e, uniqueId, userId, onSuccess, onError) {
 }
 
 /**
- * Handle card deletion
- * @param {string} uniqueId - Unique card ID
+ * Handle card deletion with confirmation
+ * @param {string} uniqueId - Unique ID of the card to delete
  * @param {string} userId - User ID
+ * @param {string} appId - App ID
+ * @param {Array} decks - Array of user decks
+ * @param {Array} searchResults - Current search results
  * @param {Function} onSuccess - Callback for successful deletion
  * @param {Function} onError - Callback for errors
+ * @param {string} activeLang - Current language
  */
-export async function handleDeleteCard(uniqueId, userId, onSuccess, onError) {
+export async function handleDeleteCard(uniqueId, userId, appId, decks, searchResults, onSuccess, onError, activeLang = 'ita') {
     try {
-        await removeCardFromCollection(userId, uniqueId);
-        onSuccess();
+        const cardInCollection = searchResults.find(r => r.id === uniqueId);
+        if (!cardInCollection) {
+            onError('Card not found');
+            return;
+        }
+
+        const cardToDelete = cardInCollection.result;
+        const cardOracleId = cardToDelete.oracle_id;
+
+        // Find decks containing this card
+        const decksWithCard = decks.filter(deck => 
+            deck.cards && deck.cards.some(card => card.oracle_id === cardOracleId)
+        );
+
+        const deleteCardFromCollection = async () => {
+            await removeCardFromCollection(userId, uniqueId);
+            onSuccess();
+        };
+
+        if (decksWithCard.length > 0) {
+            const deckNames = decksWithCard.map(d => d.name).join(', ');
+            
+            // Show modal with deck information
+            showModal('modalRemoveFromDecks', true, 
+                async () => {
+                    // "Yes, from Everywhere" - remove from collection and all decks
+                    await deleteCardFromCollection();
+                    await firebaseRemoveCardFromAllDecksByOracleId(userId, cardOracleId);
+                },
+                async () => {
+                    // "Collection Only" - remove only from collection
+                    await deleteCardFromCollection();
+                },
+                { 'DECK_NAMES': deckNames },
+                activeLang
+            );
+        } else {
+            // Card is not in any deck, show simple confirmation
+            showModal('modalRemoveCard', true, 
+                async () => {
+                    await deleteCardFromCollection();
+                },
+                null,
+                {},
+                activeLang
+            );
+        }
     } catch (error) {
         console.error("Error deleting card:", error);
         onError('Error deleting card');
     }
+}
+
+/**
+ * Create a delete card handler with the required parameters
+ * @param {string} userId - User ID
+ * @param {string} appId - App ID
+ * @param {Array} decks - Array of user decks
+ * @param {Array} searchResults - Current search results
+ * @param {Function} onSuccess - Callback for successful deletion
+ * @param {Function} onError - Callback for errors
+ * @param {string} activeLang - Current language
+ * @returns {Function} Delete handler function
+ */
+export function createDeleteCardHandler(userId, appId, decks, searchResults, onSuccess, onError, activeLang = 'ita') {
+    return (uniqueId) => {
+        handleDeleteCard(uniqueId, userId, appId, decks, searchResults, onSuccess, onError, activeLang);
+    };
 }
 
 /**

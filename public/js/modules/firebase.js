@@ -179,10 +179,10 @@ export function buildBaseCollectionQuery(userId, searchTerm = '') {
  * @param {Object} lastVisible - Last visible document for pagination
  * @returns {Promise<Object>} Page data with cards and pagination info
  */
-export async function fetchCollectionPage(userId, direction = 'first', cardsPerPage = 50, pageFirstDocs = [null], lastVisible = null) {
+export async function fetchCollectionPage(userId, direction = 'first', cardsPerPage = 50, pageFirstDocs = [null], lastVisible = null, searchTerm = '') {
   if (!db) return { cards: [], hasMore: false, lastVisible: null };
   
-  let baseQuery = buildBaseCollectionQuery(userId);
+  let baseQuery = buildBaseCollectionQuery(userId, searchTerm);
   let pageQuery;
 
   if (direction === 'first') {

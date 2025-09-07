@@ -16,7 +16,6 @@ import {
   addCardToCollection as firebaseAddCardToCollection,
   updateCardInCollection,
   removeCardFromCollection,
-  buildBaseCollectionQuery,
   fetchCollectionPage,
   getAllCollectionCards,
   setupDecksListener,
@@ -40,7 +39,6 @@ import {
   addRow,
   reindexRows,
   renderTable,
-  updatePaginationUI,
   renderDecksList,
   enterDeckEditor,
   renderDeckCards,
@@ -194,11 +192,6 @@ if (firebaseInstances) {
 
 // Translations are now imported from the translations module
 
-// Function to translate the UI based on the selected language
-function updateUILocal(lang) {
-    updateUI(lang);
-    updatePaginationUI(searchResults.length, currentPage, activeLang);
-}
 
 // Table sorting variables
 let currentSort = { column: null, direction: 'asc' };
@@ -317,15 +310,12 @@ async function addCardToCollection(cardData) {
 // Helper to map sort column to firestore field name
 // getSortableField is now imported from searchFilter module
 
-// Function to build the base query with current filters and sorting
-function buildLocalCollectionQuery() {
-    const searchTerm = document.getElementById('collectionFilterInput').value.trim();
-    return buildBaseCollectionQuery(userId, searchTerm);
-}
-
 // Main function to fetch and render a page of the collection
 async function fetchAndRenderCollectionPageLocal(direction = 'first') {
     if (!db) return;
+    
+    // Read search term from DOM (this replaces the buildLocalCollectionQuery functionality)
+    const searchTerm = document.getElementById('collectionFilterInput').value.trim();
     
     const paginationState = {
         currentPage,
@@ -343,7 +333,8 @@ async function fetchAndRenderCollectionPageLocal(direction = 'first') {
         (error) => {
             console.error("Error fetching collection page:", error);
             alert("Errore nel caricare i dati. Potrebbe essere necessario creare un indice in Firestore per l'ordinamento richiesto. Controlla la console per il link per crearlo.");
-        }
+        },
+        appId, decks, searchResults, searchTerm
     );
     
     if (result) {
@@ -840,14 +831,6 @@ async function enterDeckEditor(deckId) {
     });
 }
 
-
-
-
-
-async function removeCardFromAllDecksByOracleIdLocal(oracleId) {
-    const updatedDecksCount = await removeCardFromAllDecksByOracleId(userId, oracleId);
-    console.log(`Card with oracle_id ${oracleId} removed from ${updatedDecksCount} decks.`);
-}
 
 // Event listeners for Deck builder
 document.getElementById('createDeckBtn').addEventListener('click', async () => {
