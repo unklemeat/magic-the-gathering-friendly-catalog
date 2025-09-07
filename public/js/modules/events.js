@@ -1,7 +1,5 @@
-import { getTranslation } from './translations.js';
 import { capitalizeWords } from './scryfallApi.js';
-import { setupVoiceSearch, clearAllFilters, validateSearchInput } from './searchFilter.js';
-import { showModal } from './ui.js';
+import { setupVoiceSearch, clearAllFilters } from './searchFilter.js';
 import * as state from './state.js';
 
 export function setupEventListeners(handlers) {
@@ -21,7 +19,9 @@ export function setupEventListeners(handlers) {
             document.getElementById('searchCardBtn').click();
         },
         (errorKey) => {
-            showModal(errorKey, false, null, null, {}, state.activeLang);
+            if (handlers.onVoiceSearchError) {
+                handlers.onVoiceSearchError(errorKey);
+            }
         }
     );
 

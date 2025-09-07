@@ -36,7 +36,6 @@ import {
   findCardAndHandleResults,
   populateSetSelect,
   handleSearchWithUI,
-  setupVoiceSearch,
   clearAllFilters,
   validateSearchInput
 } from './modules/searchFilter.js';
@@ -662,7 +661,19 @@ const eventHandlers = {
     },
 
     onCollectionReset: () => {
+        // Clear search input
         document.getElementById('collectionFilterInput').value = '';
+        
+        // Reset all color filters to default state
+        const newFilters = clearAllFilters((defaultFilters) => {
+            document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
+                c.checked = true;
+                c.closest('label').classList.add('checked');
+            });
+        });
+        state.setActiveFilters(newFilters);
+        
+        // Refresh the collection page
         fetchAndRenderCollectionPageLocal('first');
     },
 
@@ -693,6 +704,10 @@ const eventHandlers = {
     onLanguageChange: (newLang) => {
         state.setActiveLang(newLang);
         updateUI(state.activeLang);
+    },
+
+    onVoiceSearchError: (errorKey) => {
+        showModalLocal(errorKey);
     }
 };
 
@@ -703,35 +718,7 @@ window.onload = () => {
   // Initialize event listeners after DOM is ready
   setupEventListeners(eventHandlers);
   
-  // Voice search setup (after DOM is ready)
-  const voiceSearchBtn = document.getElementById('voiceSearchBtn');
-  const cardNameInput = document.getElementById('cardNameInput');
-  const micIcon = document.getElementById('mic-icon');
-  const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
-
-  const startVoiceSearch = setupVoiceSearch(
-      (transcript) => {
-          if (transcript) {
-              cardNameInput.value = capitalizeWords(transcript);
-          } else {
-              cardNameInput.value = '';
-          }
-          document.getElementById('searchCardBtn').click();
-      },
-      (errorKey) => {
-          showModalLocal(errorKey);
-      }
-  );
-
-  if (!startVoiceSearch) {
-      if (voiceSearchBtn) {
-          voiceSearchBtn.disabled = true;
-      }
-      if (micUnsupportedIcon) {
-          micUnsupportedIcon.classList.remove('hidden');
-      }
-      console.warn("Your browser does not support the Web Speech API.");
-  }
+  // Voice search setup is handled in events.js
   
   loadSets();
   updateUI(state.activeLang);
