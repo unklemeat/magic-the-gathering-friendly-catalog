@@ -13,7 +13,14 @@ import {
   updateDeck as firebaseUpdateDeck,
   addCardToDeck as firebaseAddCardToDeck,
   removeCardFromDeck as firebaseRemoveCardFromDeck,
-  importDecks as firebaseImportDecks
+  importDecks as firebaseImportDecks,
+  getDocs,
+  query,
+  collection,
+  orderBy,
+  doc,
+  deleteDoc,
+  addDoc
 } from './modules/firebase.js';
 import {
   updateUI,
@@ -39,6 +46,7 @@ import {
   fetchAndRenderCollectionPage as collectionFetchAndRenderCollectionPage,
   calculateAndDisplayTotalValue as collectionCalculateAndDisplayTotalValue
 } from './modules/collectionManagement.js';
+import { setupEventListeners } from './modules/events.js';
 import * as state from './modules/state.js';
 
 
@@ -268,77 +276,9 @@ async function calculateAndDisplayTotalValueLocal() {
     );
 }
 
-
-// Handle voice search
-const voiceSearchBtn = document.getElementById('voiceSearchBtn');
-const cardNameInput = document.getElementById('cardNameInput');
-const micIcon = document.getElementById('mic-icon');
-const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
-
-const startVoiceSearch = setupVoiceSearch(
-    // onVoiceResult callback
-    (transcript) => {
-        if (transcript) {
-            cardNameInput.value = capitalizeWords(transcript);
-        } else {
-            cardNameInput.value = ''; // Clear input if no result
-        }
-        document.getElementById('searchCardBtn').click();
-    },
-    // onVoiceError callback
-    (errorKey) => {
-        showModalLocal(errorKey);
-    }
-);
-
-if (startVoiceSearch) {
-    // Voice search is supported
-    let isListening = false;
-    
-    voiceSearchBtn.addEventListener('click', () => {
-        if (isListening) {
-            // Stop listening (we'd need to add this functionality to setupVoiceSearch)
-            isListening = false;
-            micIcon.classList.remove('text-green-500', 'mic-listening');
-        } else {
-            startVoiceSearch();
-            isListening = true;
-            micIcon.classList.add('text-green-500', 'mic-listening');
-        }
-    });
-} else {
-    // Voice search not supported
-    if (voiceSearchBtn) {
-        voiceSearchBtn.disabled = true;
-    }
-    if (micUnsupportedIcon) {
-        micUnsupportedIcon.classList.remove('hidden');
-    }
-    console.warn("Your browser does not support the Web Speech API.");
-}
-
-// Logic for tabs
-document.querySelectorAll('.tab-button').forEach(button => {
-    button.addEventListener('click', (e) => {
-        // Remove active styles from all buttons
-        document.querySelectorAll('.tab-button').forEach(btn => {
-            btn.classList.remove('active', 'text-purple-700', 'border-purple-500');
-            btn.classList.add('text-gray-500', 'border-transparent');
-        });
-        
-        // Hide all content
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
-
-        // Add active styles to the clicked button
-        const clickedButton = e.target;
-        clickedButton.classList.add('active');
-        clickedButton.classList.remove('text-gray-500', 'border-transparent');
-        clickedButton.classList.add('text-purple-700', 'border-purple-500');
-
-        // Show corresponding content
-        const tabId = clickedButton.dataset.tab;
-        document.getElementById(tabId).classList.remove('hidden');
-        
+// Event handlers object for the events module
+const eventHandlers = {
+    onTabChange: (tabId) => {
         const resultsSection = document.getElementById('resultsSection');
         if (resultsSection) {
             if (tabId === 'search-tab') {
@@ -357,37 +297,319 @@ document.querySelectorAll('.tab-button').forEach(button => {
         }
 
         if (tabId === 'decks-tab') {
-            renderDecksList();
+            renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
+                (deckId) => showModalLocal('modalRemoveCard', true, async () => {
+                    const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
+                    await deleteDoc(deckDocRef);
+                }), state.activeLang);
         }
-    });
-});
+    },
 
-// Event listener for the set select dropdown
-document.getElementById('setSelect').addEventListener('change', (e) => {
-    fetchAndRenderSetCards(e.target.value);
-});
+    onSetChange: (setCode) => {
+        fetchAndRenderSetCards(setCode);
+    },
 
+    onStatusClick: () => {
+        let messageKey = '';
+        if (state.apiStatus === 'ready') {
+            messageKey = 'modalApiOk';
+        } else if (state.apiStatus === 'error') {
+            messageKey = 'modalApiError';
+        } else {
+            messageKey = 'modalApiConnecting';
+        }
+        showModal(messageKey, false, null, null, {}, state.activeLang);
+    },
 
-// Event listener for the API status button
-document.getElementById('statusBtn').addEventListener('click', () => {
-    let messageKey = '';
-    if (apiStatus === 'ready') {
-        messageKey = 'modalApiOk';
-    } else if (apiStatus === 'error') {
-        messageKey = 'modalApiError';
-    } else {
-        messageKey = 'modalApiConnecting';
+    onSearch: () => {
+        handleSearch();
+    },
+
+    onProcessCsv: async () => {
+        const file = document.getElementById('csvFile').files[0];
+        const processCsvBtn = document.getElementById('processCsv');
+        if (!file) {
+            showModal('modalNoCardName', false, null, null, {}, state.activeLang);
+            return;
+        }
+
+        processCsvBtn.disabled = true;
+        processCsvBtn.textContent = getTranslation('processCsvBtn-loading', state.activeLang);
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const text = e.target.result;
+            const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
+            
+            const progress = document.getElementById("progress");
+            const progressText = document.getElementById("progressText");
+            if (progress) progress.classList.remove('hidden');
+            
+            for (let i = 0; i < lines.length; i++) {
+                const line = lines[i];
+                const [name, set] = line.split(';').map(s => s.trim());
+                
+                if (name) {
+                    if (progressText) progressText.textContent = `${getTranslation('processing', state.activeLang)} ${i + 1}/${lines.length}: "${name}"...`;
+                    
+                    await findCardAndHandleResults(name, state.activeLang, 
+                        (card) => {
+                            addCardToCollection(card);
+                        },
+                        (cards) => {
+                            if (cards && cards.length > 0) {
+                                addCardToCollection(cards[0]);
+                            }
+                        },
+                        (cardName) => {
+                            console.log(`Card not found during CSV processing: ${cardName}`);
+                        }
+                    );
+                }
+            }
+            if (progress) progress.classList.add('hidden');
+            fetchAndRenderCollectionPageLocal('first');
+            showModal('modalCsvComplete', false, null, null, {}, state.activeLang);
+            processCsvBtn.disabled = false;
+            processCsvBtn.textContent = getTranslation('processCsvBtn-completed', state.activeLang);
+        };
+        reader.readAsText(file);
+    },
+
+    onSaveJson: () => {
+        if (state.searchResults.length === 0) {
+            showModal('modalNoCardsToSave', false, null, null, {}, state.activeLang);
+            return;
+        }
+
+        const exportData = state.searchResults.map(r => r.result);
+        const jsonString = JSON.stringify(exportData, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mtg_collection_data.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showModal('modalJsonSaved', false, null, null, {}, state.activeLang);
+    },
+
+    onLoadJson: async (file) => {
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const progress = document.getElementById("progress");
+            const progressText = document.getElementById("progressText");
+            if (progress) progress.classList.remove('hidden');
+            if (progressText) progressText.textContent = getTranslation('processing', state.activeLang);
+            try {
+                const data = JSON.parse(event.target.result);
+                if (Array.isArray(data)) {
+                    const collectionRef = collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`);
+
+                    if (progressText) progressText.textContent = "Cancellazione della collezione esistente...";
+                    const existingDocsSnapshot = await getDocs(collectionRef);
+                    const deletePromises = existingDocsSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
+                    
+                    await Promise.all(deletePromises);
+                    console.log("Existing collection cleared.");
+
+                    if (progressText) progressText.textContent = "Aggiunta delle nuove carte...";
+                    const addPromises = data.map(cardData => {
+                        const cardToSave = { ...cardData };
+                        delete cardToSave.cardPrints;
+                        return addDoc(collectionRef, cardToSave);
+                    });
+
+                    await Promise.all(addPromises);
+                    console.log("New cards added from JSON.");
+
+                    showModal('modalCardsLoaded', false, null, null, { 'CARD_COUNT': data.length }, state.activeLang);
+                    fetchAndRenderCollectionPageLocal('first');
+                    calculateAndDisplayTotalValueLocal();
+                } else {
+                    showModal('modalInvalidJson', false, null, null, {}, state.activeLang);
+                }
+            } catch (error) {
+                console.error("Errore nel parsing o nel caricamento del JSON:", error);
+                showModal('modalJsonLoadError', false, null, null, {}, state.activeLang);
+            } finally {
+                if (progress) progress.classList.add('hidden');
+            }
+        };
+        reader.readAsText(file);
+    },
+
+    onSaveDecks: () => {
+        if (state.decks.length === 0) {
+            showModal('modalNoDecksToSave', false, null, null, {}, state.activeLang);
+            return;
+        }
+
+        const jsonString = JSON.stringify(state.decks, null, 2);
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mtg_decks_data.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        showModal('modalDecksSaved', false, null, null, {}, state.activeLang);
+    },
+
+    onLoadDecks: async (file) => {
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const progress = document.getElementById("progress");
+            const progressText = document.getElementById("progressText");
+            if (progress) progress.classList.remove('hidden');
+            if (progressText) progressText.textContent = getTranslation('processing', state.activeLang);
+            try {
+                const data = JSON.parse(event.target.result);
+                if (Array.isArray(data)) { 
+                    if (progressText) progressText.textContent = "Importazione dei mazzi...";
+                    
+                    const success = await firebaseImportDecks(state.userId, data);
+                    if (success) {
+                        console.log("New decks added from JSON.");
+                        showModal('modalDecksLoaded', false, null, null, { 'DECK_COUNT': data.length }, state.activeLang);
+                    } else {
+                        showModal('modalJsonLoadError', false, null, null, {}, state.activeLang);
+                    }
+                } else {
+                    showModal('modalInvalidDecksJson', false, null, null, {}, state.activeLang);
+                }
+            } catch (error) {
+                console.error("Errore nel parsing o nel caricamento del JSON dei mazzi:", error);
+                showModal('modalJsonLoadError', false, null, null, {}, state.activeLang);
+            } finally {
+                if (progress) progress.classList.add('hidden');
+            }
+        };
+        reader.readAsText(file);
+    },
+
+    onCreateDeck: async () => {
+        const deckNameInput = document.getElementById('newDeckNameInput');
+        const deckName = deckNameInput.value.trim();
+        if (deckName) {
+            await addDeck(deckName);
+            deckNameInput.value = '';
+        }
+    },
+
+    onBackToDecks: () => {
+        state.setCurrentDeck(null);
+        state.setCurrentDeckId(null);
+        document.getElementById('decks-list').classList.remove('hidden');
+        document.getElementById('deck-editor').classList.add('hidden');
+        renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
+            (deckId) => showModalLocal('modalRemoveCard', true, async () => {
+                const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
+                await deleteDoc(deckDocRef);
+            }), state.activeLang);
+    },
+
+    onCollectionSearch: async () => {
+        const collectionSearchInput = document.getElementById('collectionSearchInput');
+        const searchTerm = collectionSearchInput.value.toLowerCase();
+        const collectionSnapshot = await getDocs(query(collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`), orderBy('name')));
+        const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
+        const filteredCollection = fullCollection.filter(card => {
+            const cardName = card.result.printed_name || card.result.name;
+            return cardName.toLowerCase().includes(searchTerm);
+        });
+        
+        renderCollectionCards(filteredCollection, searchTerm, state.activeLang, async (cardData) => {
+            await firebaseAddCardToDeck(state.userId, state.currentDeckId, cardData, state.currentDeck.cards || []);
+        });
+    },
+
+    onNextPage: () => fetchAndRenderCollectionPageLocal('next'),
+    onPrevPage: () => fetchAndRenderCollectionPageLocal('prev'),
+    
+    onPageSizeChange: (newSize) => {
+        state.setCardsPerPage(newSize);
+        fetchAndRenderCollectionPageLocal('first');
+    },
+
+    onCollectionFilter: () => {
+        fetchAndRenderCollectionPageLocal('first');
+    },
+
+    onCollectionReset: () => {
+        document.getElementById('collectionFilterInput').value = '';
+        fetchAndRenderCollectionPageLocal('first');
+    },
+
+    onSort: (column) => {
+        document.getElementById('collectionFilterInput').value = '';
+        let direction = 'asc';
+
+        if (state.currentSort.column === column) {
+            direction = state.currentSort.direction === 'asc' ? 'desc' : 'asc';
+        }
+
+        document.querySelectorAll('.sort-icon').forEach(icon => {
+            icon.className = 'sort-icon';
+        });
+
+        const header = document.querySelector(`[data-sort="${column}"]`);
+        const icon = header.querySelector('.sort-icon');
+        icon.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+
+        state.setCurrentSort({ column, direction });
+        fetchAndRenderCollectionPageLocal('first');
+    },
+
+    onColorFilterChange: () => {
+        fetchAndRenderCollectionPageLocal('current');
+    },
+
+    onLanguageChange: (newLang) => {
+        state.setActiveLang(newLang);
+        updateUI(state.activeLang);
     }
-    showModal(messageKey);
-});
+};
 
-// Event listener for the search button
-document.getElementById('cardNameInput').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-        event.preventDefault();
+// Voice search setup (kept here since it's initialization logic)
+const voiceSearchBtn = document.getElementById('voiceSearchBtn');
+const cardNameInput = document.getElementById('cardNameInput');
+const micIcon = document.getElementById('mic-icon');
+const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
+
+const startVoiceSearch = setupVoiceSearch(
+    (transcript) => {
+        if (transcript) {
+            cardNameInput.value = capitalizeWords(transcript);
+        } else {
+            cardNameInput.value = '';
+        }
         document.getElementById('searchCardBtn').click();
+    },
+    (errorKey) => {
+        showModalLocal(errorKey);
     }
-});
+);
+
+if (!startVoiceSearch) {
+    if (voiceSearchBtn) {
+        voiceSearchBtn.disabled = true;
+    }
+    if (micUnsupportedIcon) {
+        micUnsupportedIcon.classList.remove('hidden');
+    }
+    console.warn("Your browser does not support the Web Speech API.");
+}
+
+// Initialize event listeners
+setupEventListeners(eventHandlers);
 
 async function handleSearch() {
     const cardNameInput = document.getElementById('cardNameInput');
@@ -439,14 +661,8 @@ async function handleSearch() {
     );
 }
 
-document.getElementById('searchCardBtn').addEventListener('click', handleSearch);
-
-document.getElementById('closeSelectionModalBtn').addEventListener('click', () => {
-    document.getElementById('cardSelectionModal').classList.add('hidden');
-});
-
-// Event listener for CSV file upload
-document.getElementById('processCsv').addEventListener('click', async () => {
+// CSV file upload logic moved to eventHandlers.onProcessCsv
+async function processCsvOld() {
     const file = document.getElementById('csvFile').files[0];
     const processCsvBtn = document.getElementById('processCsv');
     if (!file) {
@@ -498,31 +714,10 @@ document.getElementById('processCsv').addEventListener('click', async () => {
         processCsvBtn.textContent = getTranslation('processCsvBtn-completed', state.activeLang);
     };
     reader.readAsText(file);
-});
+}
 
-// Event listener for JSON save button
-document.getElementById('saveJsonBtn').addEventListener('click', () => {
-    if (state.searchResults.length === 0) {
-        showModal('modalNoCardsToSave');
-        return;
-    }
-
-    const exportData = state.searchResults.map(r => r.result);
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'mtg_collection_data.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showModal('modalJsonSaved');
-});
-
-// Event listener for JSON load button
-document.getElementById('loadJsonFile').addEventListener('change', (e) => {
+// Old JSON load logic - moved to eventHandlers.onLoadJson
+function oldLoadJsonFunction(e) {
     const file = e.target.files[0];
     if (!file) return;
 
@@ -572,144 +767,7 @@ document.getElementById('loadJsonFile').addEventListener('change', (e) => {
         }
     };
     reader.readAsText(file);
-});
-
-// Event listener for save decks button
-document.getElementById('saveDecksBtn').addEventListener('click', () => {
-    if (state.decks.length === 0) {
-        showModal('modalNoDecksToSave');
-        return;
-    }
-
-    const jsonString = JSON.stringify(state.decks, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'mtg_decks_data.json';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-    showModal('modalDecksSaved');
-});
-
-// Event listener for load decks button
-document.getElementById('loadDecksFile').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-        const progress = document.getElementById("progress");
-        const progressText = document.getElementById("progressText");
-        if (progress) progress.classList.remove('hidden');
-        if (progressText) progressText.textContent = getTranslation('processing', state.activeLang);
-        try {
-            const data = JSON.parse(event.target.result);
-            if (Array.isArray(data)) { 
-                if (progressText) progressText.textContent = "Importazione dei mazzi...";
-                
-                const success = await firebaseImportDecks(state.userId, data);
-                if (success) {
-                    console.log("New decks added from JSON.");
-                    showModal('modalDecksLoaded', false, null, null, { 'DECK_COUNT': data.length });
-                } else {
-                    showModal('modalJsonLoadError');
-                }
-            } else {
-                showModal('modalInvalidDecksJson');
-            }
-        } catch (error) {
-            console.error("Errore nel parsing o nel caricamento del JSON dei mazzi:", error);
-            showModal('modalJsonLoadError');
-        } finally {
-            if (progress) progress.classList.add('hidden');
-        }
-    };
-    reader.readAsText(file);
-});
-
-
-// Event listeners for table sorting
-document.querySelectorAll('#resultsTable .sortable').forEach(header => {
-  header.addEventListener('click', () => {
-    document.getElementById('collectionFilterInput').value = ''; // Reset search
-    const column = header.dataset.sort;
-    let direction = 'asc';
-
-    // If it's the same column, reverse the direction
-    if (state.currentSort.column === column) {
-      direction = state.currentSort.direction === 'asc' ? 'desc' : 'asc';
-    }
-
-    // Reset all sort icons
-    document.querySelectorAll('.sort-icon').forEach(icon => {
-        icon.className = 'sort-icon';
-    });
-
-    // Update the icon for the clicked header
-    const icon = header.querySelector('.sort-icon');
-    icon.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
-
-    state.setCurrentSort({ column, direction });
-    fetchAndRenderCollectionPageLocal('first');
-  });
-});
-
-// Event listeners for color filters
-document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(checkbox => {
-    checkbox.addEventListener('change', (e) => {
-        const selectedColor = e.target.dataset.color;
-        
-        if (selectedColor === 'all' && e.target.checked) {
-            // Use clearAllFilters function
-            const newFilters = clearAllFilters((defaultFilters) => {
-                // Update DOM to reflect all filters are checked
-                document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
-                    c.checked = true;
-                    c.closest('label').classList.add('checked');
-                });
-            });
-            state.setActiveFilters(newFilters);
-        } else if (selectedColor === 'all' && !e.target.checked) {
-            // Clear all filters
-            document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
-                c.checked = false;
-                c.closest('label').classList.remove('checked');
-            });
-            state.setActiveFilters([]);
-        } else {
-            document.getElementById('filter-all').checked = false;
-            document.getElementById('filter-all').closest('label').classList.remove('checked');
-            
-            e.target.closest('label').classList.toggle('checked', e.target.checked);
-            
-            const newFilters = Array.from(document.querySelectorAll('.color-filter-label input:checked')).map(c => c.dataset.color);
-            state.setActiveFilters(newFilters);
-
-            // If no filters are active, re-select "all"
-            if (state.activeFilters.length === 0) {
-                document.getElementById('filter-all').checked = true;
-                document.getElementById('filter-all').closest('label').classList.add('checked');
-                state.activeFilters.push('all');
-            }
-        }
-        
-        // When filtering, re-fetch the current page with new filters
-        fetchAndRenderCollectionPageLocal('current');
-    });
-});
-
-// Event listener for language select dropdown
-document.getElementById('lang-select').addEventListener('change', (e) => {
-    state.setActiveLang(e.target.value);
-    updateUI(state.activeLang);
-});
-
-document.getElementById('closeDetailsModalBtn').addEventListener('click', () => {
-    document.getElementById('cardDetailsModal').classList.add('hidden');
-});
+}
 
 // Deck Builder Logic
 async function addDeck(name) {
@@ -754,116 +812,6 @@ async function enterDeckEditor(deckId) {
         await firebaseAddCardToDeck(state.userId, state.currentDeckId, cardData, state.currentDeck.cards || []);
     });
 }
-
-
-// Event listeners for Deck builder
-document.getElementById('createDeckBtn').addEventListener('click', async () => {
-    const deckNameInput = document.getElementById('newDeckNameInput');
-    const deckName = deckNameInput.value.trim();
-    if (deckName) {
-        await addDeck(deckName);
-        deckNameInput.value = '';
-    }
-});
-
-document.getElementById('backToDecksBtn').addEventListener('click', () => {
-    state.setCurrentDeck(null);
-    state.setCurrentDeckId(null);
-    document.getElementById('decks-list').classList.remove('hidden');
-    document.getElementById('deck-editor').classList.add('hidden');
-    renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
-        (deckId) => showModalLocal('modalRemoveCard', true, async () => {
-            const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
-            await deleteDoc(deckDocRef);
-        }), state.activeLang); // Rerender the list to show the updated card counts
-});
-
-document.getElementById('collectionSearchInput').addEventListener('input', async () => {
-    // Re-render collection cards with new search term
-    const collectionSearchInput = document.getElementById('collectionSearchInput');
-    const searchTerm = collectionSearchInput.value.toLowerCase();
-    const collectionSnapshot = await getDocs(query(collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`), orderBy('name')));
-    const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
-    const filteredCollection = fullCollection.filter(card => {
-        const cardName = card.result.printed_name || card.result.name;
-        return cardName.toLowerCase().includes(searchTerm);
-    });
-    
-    renderCollectionCards(filteredCollection, searchTerm, state.activeLang, async (cardData) => {
-        await firebaseAddCardToDeck(state.userId, state.currentDeckId, cardData, state.currentDeck.cards || []);
-    });
-});
-
-// Pagination event listeners
-document.getElementById('nextPageBtn').addEventListener('click', () => fetchAndRenderCollectionPageLocal('next'));
-document.getElementById('prevPageBtn').addEventListener('click', () => fetchAndRenderCollectionPageLocal('prev'));
-document.getElementById('pageSizeSelect').addEventListener('change', (e) => {
-    state.setCardsPerPage(parseInt(e.target.value, 10));
-    fetchAndRenderCollectionPageLocal('first');
-});
-
-// Collection filter event listener
-document.getElementById('collectionSearchBtn').addEventListener('click', () => {
-    fetchAndRenderCollectionPageLocal('first');
-});
-
-document.getElementById('collectionFilterInput').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') {
-        event.preventDefault();
-        document.getElementById('collectionSearchBtn').click();
-    }
-});
-
-document.getElementById('collectionResetBtn').addEventListener('click', () => {
-    document.getElementById('collectionFilterInput').value = '';
-    fetchAndRenderCollectionPageLocal('first');
-});
-
-
-// Tab switching logic
-document.querySelectorAll('.tab-button').forEach(button => {
-    button.addEventListener('click', (e) => {
-        // Remove active styles from all buttons
-        document.querySelectorAll('.tab-button').forEach(btn => {
-            btn.classList.remove('active', 'text-purple-700', 'border-purple-500');
-            btn.classList.add('text-gray-500', 'border-transparent');
-        });
-        
-        // Hide all content
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
-
-        // Add active styles to the clicked button
-        const clickedButton = e.target;
-        clickedButton.classList.add('active');
-        clickedButton.classList.remove('text-gray-500', 'border-transparent');
-        clickedButton.classList.add('text-purple-700', 'border-purple-500');
-
-        // Show corresponding content
-        const tabId = clickedButton.dataset.tab;
-        document.getElementById(tabId).classList.remove('hidden');
-        
-        const resultsSection = document.getElementById('resultsSection');
-        if (resultsSection) {
-            if (tabId === 'search-tab') {
-                resultsSection.classList.remove('hidden');
-                fetchAndRenderCollectionPageLocal('first');
-            } else {
-                resultsSection.classList.add('hidden');
-            }
-        }
-        
-        if (tabId === 'explore-tab' && state.allSets.length > 0) {
-            const setSelect = document.getElementById('setSelect');
-            if (setSelect.value) {
-                fetchAndRenderSetCards(setSelect.value);
-            }
-        }
-
-        if (tabId === 'decks-tab') {
-            renderDecksList();
-        }
-    });
-});
 
 window.onload = () => {
   loadSets();
