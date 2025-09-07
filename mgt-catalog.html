@@ -86,10 +86,7 @@
       box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
     }
   }
-
-  .tab-button.active {
-      @apply bg-white text-gray-900 border-b-2 border-purple-500;
-  }
+  
   .tab-content.hidden {
       display: none;
   }
@@ -184,11 +181,11 @@
     <!-- Tabbed Interface -->
     <div class="bg-white rounded-lg shadow-xl p-6 mb-6">
         <div class="flex border-b border-gray-200">
-            <button class="tab-button active py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="search-tab" data-lang-key="tabSearch">Cerca Carta</button>
-            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="decks-tab" data-lang-key="tabDecks">Mazzi</button>
-            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="explore-tab" data-lang-key="tabExplore">Esplora Espansioni</button>
-            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="csv-tab" data-lang-key="tabCsv">Carica CSV</button>
-            <button class="tab-button py-2 px-4 font-semibold text-gray-700 transition-colors" data-tab="data-tab" data-lang-key="tabData">Gestisci Dati</button>
+            <button class="tab-button active py-2 px-4 font-semibold transition-colors duration-200 border-b-2 -mb-px hover:text-purple-700 text-purple-700 border-purple-500" data-tab="search-tab" data-lang-key="tabSearch">Cerca Carta</button>
+            <button class="tab-button py-2 px-4 font-semibold transition-colors duration-200 border-b-2 -mb-px hover:text-purple-700 text-gray-500 border-transparent" data-tab="decks-tab" data-lang-key="tabDecks">Mazzi</button>
+            <button class="tab-button py-2 px-4 font-semibold transition-colors duration-200 border-b-2 -mb-px hover:text-purple-700 text-gray-500 border-transparent" data-tab="explore-tab" data-lang-key="tabExplore">Esplora Espansioni</button>
+            <button class="tab-button py-2 px-4 font-semibold transition-colors duration-200 border-b-2 -mb-px hover:text-purple-700 text-gray-500 border-transparent" data-tab="csv-tab" data-lang-key="tabCsv">Carica CSV</button>
+            <button class="tab-button py-2 px-4 font-semibold transition-colors duration-200 border-b-2 -mb-px hover:text-purple-700 text-gray-500 border-transparent" data-tab="data-tab" data-lang-key="tabData">Gestisci Dati</button>
         </div>
         
         <div id="search-tab" class="tab-content pt-4">
@@ -264,11 +261,24 @@
         </div>
         
         <div id="data-tab" class="tab-content pt-4 hidden">
-            <h2 class="text-xl font-bold mb-4" data-lang-key="dataTitle">Gestisci i dati</h2>
-            <div class="flex flex-col md:flex-row gap-4">
-                <button id="saveJsonBtn" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105" data-lang-key="saveJsonBtn">Salva come JSON</button>
-                <label for="loadJsonFile" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105 text-center cursor-pointer" data-lang-key="loadJsonLabel">Carica da JSON</label>
-                <input type="file" id="loadJsonFile" accept=".json,application/json" class="hidden" />
+            <h2 class="text-xl font-bold mb-4" data-lang-key="dataTitle">Gestisci Dati Applicazione</h2>
+            <!-- Sezione Collezione -->
+            <div class="mb-8 p-4 border rounded-lg">
+                <h3 class="text-lg font-semibold mb-3" data-lang-key="collectionDataTitle">Gestisci La mia Collezione</h3>
+                <div class="flex flex-col md:flex-row gap-4">
+                    <button id="saveJsonBtn" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105" data-lang-key="saveJsonBtn">Salva Collezione</button>
+                    <label for="loadJsonFile" class="w-full md:w-auto bg-gray-500 hover:bg-gray-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105 text-center cursor-pointer" data-lang-key="loadJsonLabel">Carica Collezione</label>
+                    <input type="file" id="loadJsonFile" accept=".json,application/json" class="hidden" />
+                </div>
+            </div>
+            <!-- Sezione Mazzi -->
+            <div class="p-4 border rounded-lg">
+                <h3 class="text-lg font-semibold mb-3" data-lang-key="decksDataTitle">Gestisci i Mazzi</h3>
+                <div class="flex flex-col md:flex-row gap-4">
+                    <button id="saveDecksBtn" class="w-full md:w-auto bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105" data-lang-key="saveDecksBtn">Salva Mazzi</button>
+                    <label for="loadDecksFile" class="w-full md:w-auto bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded-full shadow-lg transition-all duration-300 hover:scale-105 text-center cursor-pointer" data-lang-key="loadDecksLabel">Importa Mazzi</label>
+                    <input type="file" id="loadDecksFile" accept=".json,application/json" class="hidden" />
+                </div>
             </div>
         </div>
     </div>
@@ -458,7 +468,9 @@ if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
             onSnapshot(decksQuery, (snapshot) => {
                 decks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 console.log("Decks loaded:", decks);
-                const currentTab = document.querySelector('.tab-button.active').dataset.tab;
+                const activeButton = document.querySelector('.tab-button.active');
+                if (!activeButton) return;
+                const currentTab = activeButton.dataset.tab;
                 
                 if (currentTab === 'decks-tab') {
                     const deckEditor = document.getElementById('deck-editor');
@@ -482,7 +494,9 @@ if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
             onSnapshot(collectionQuery, (snapshot) => {
                 searchResults = snapshot.docs.map(doc => ({ id: doc.id, result: doc.data() }));
                 console.log("Collection loaded:", searchResults);
-                const currentTab = document.querySelector('.tab-button.active').dataset.tab;
+                const activeButton = document.querySelector('.tab-button.active');
+                if (!activeButton) return;
+                const currentTab = activeButton.dataset.tab;
                 if (currentTab === 'search-tab') {
                     renderTable();
                 }
@@ -539,9 +553,13 @@ const translations = {
     processCsvBtn: 'Elabora CSV',
     'processCsvBtn-loading': 'Elaborazione...',
     'processCsvBtn-completed': 'Elabora CSV',
-    dataTitle: 'Gestisci i dati',
-    saveJsonBtn: 'Salva come JSON',
-    loadJsonLabel: 'Carica da JSON',
+    dataTitle: 'Gestisci Dati Applicazione',
+    collectionDataTitle: 'Gestisci La mia Collezione',
+    decksDataTitle: 'Gestisci i Mazzi',
+    saveJsonBtn: 'Salva Collezione',
+    loadJsonLabel: 'Carica Collezione',
+    saveDecksBtn: 'Salva Mazzi',
+    loadDecksLabel: 'Importa Mazzi',
     resultsTitle: 'Collezione',
     filterAll: 'Tutti',
     filterWhite: 'Bianco',
@@ -579,7 +597,15 @@ const translations = {
     okBtn: 'OK',
     cancelBtn: 'Annulla',
     addToCollectionBtn: 'Aggiungi alla Collezione',
-    selectionModalTitle: 'Seleziona una carta'
+    selectionModalTitle: 'Seleziona una carta',
+    removeBtn: 'Rimuovi',
+    modalDecksSaved: 'Tutti i mazzi sono stati salvati con successo in mtg_decks_data.json!',
+    modalNoDecksToSave: 'Non hai mazzi da salvare.',
+    modalDecksLoaded: 'Caricati DECK_COUNT mazzi dal file JSON.',
+    modalInvalidDecksJson: 'Il file JSON dei mazzi non è valido o è corrotto.',
+    modalRemoveFromDecks: 'Questa carta è presente nel mazzo/i: DECK_NAMES. Vuoi rimuoverla anche da lì?',
+    deleteOnlyFromCollectionBtn: 'Solo dalla Collezione',
+    deleteAllBtn: 'Sì, da tutto'
   },
   eng: {
     title: 'MTG Friendly Catalog',
@@ -613,9 +639,13 @@ const translations = {
     processCsvBtn: 'Process CSV',
     'processCsvBtn-loading': 'Processing...',
     'processCsvBtn-completed': 'Process CSV',
-    dataTitle: 'Manage Data',
-    saveJsonBtn: 'Save as JSON',
-    loadJsonLabel: 'Load from JSON',
+    dataTitle: 'Manage App Data',
+    collectionDataTitle: 'Manage My Collection',
+    decksDataTitle: 'Manage Decks',
+    saveJsonBtn: 'Save Collection',
+    loadJsonLabel: 'Load Collection',
+    saveDecksBtn: 'Save Decks',
+    loadDecksLabel: 'Import Decks',
     resultsTitle: 'Collection',
     filterAll: 'All',
     filterWhite: 'White',
@@ -653,7 +683,15 @@ const translations = {
     okBtn: 'OK',
     cancelBtn: 'Cancel',
     addToCollectionBtn: 'Add to Collection',
-    selectionModalTitle: 'Select a card'
+    selectionModalTitle: 'Select a card',
+    removeBtn: 'Remove',
+    modalDecksSaved: 'All decks were successfully saved to mtg_decks_data.json!',
+    modalNoDecksToSave: 'You have no decks to save.',
+    modalDecksLoaded: 'Loaded DECK_COUNT decks from the JSON file.',
+    modalInvalidDecksJson: 'The decks JSON file is invalid or corrupted.',
+    modalRemoveFromDecks: 'This card is in the following deck(s): DECK_NAMES. Do you want to remove it from there as well?',
+    deleteOnlyFromCollectionBtn: 'Collection Only',
+    deleteAllBtn: 'Yes, from Everywhere'
   }
 };
 
@@ -1099,12 +1137,72 @@ function addRow(data, uniqueId) {
         }
     });
     
-    newRow.querySelector('.remove-btn').addEventListener('click', () => {
-        showModal('modalRemoveCard', true, async () => {
-            if (!db || !userId) return;
-            const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
-            await deleteDoc(cardDocRef);
-        });
+    newRow.querySelector('.remove-btn').addEventListener('click', async () => {
+        if (!db || !userId) return;
+
+        const cardInCollection = searchResults.find(r => r.id === uniqueId);
+        if (!cardInCollection) return;
+
+        const cardToDelete = cardInCollection.result;
+        const cardOracleId = cardToDelete.oracle_id;
+
+        // Find decks containing this card
+        const decksWithCard = decks.filter(deck => 
+            deck.cards && deck.cards.some(card => card.oracle_id === cardOracleId)
+        );
+
+        if (decksWithCard.length > 0) {
+            const deckNames = decksWithCard.map(d => d.name).join(', ');
+            
+            const modal = document.getElementById('customModal');
+            const modalMessage = document.getElementById('modalMessage');
+            const modalButtons = document.getElementById('modalButtons');
+            
+            const message = translations[activeLang].modalRemoveFromDecks.replace('DECK_NAMES', deckNames);
+            modalMessage.textContent = message;
+
+            modalButtons.innerHTML = `
+                <button id="deleteOnlyFromCollectionBtn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${translations[activeLang].deleteOnlyFromCollectionBtn}</button>
+                <button id="deleteAllBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${translations[activeLang].deleteAllBtn}</button>
+                <button id="cancelDeleteBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors">${translations[activeLang].cancelBtn}</button>
+            `;
+            
+            const restoreModalButtons = () => {
+                modalButtons.innerHTML = `
+                    <button id="modalOkBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-full transition-colors" data-lang-key="okBtn">${translations[activeLang].okBtn}</button>
+                    <button id="modalCancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors hidden" data-lang-key="cancelBtn">${translations[activeLang].cancelBtn}</button>
+                `;
+            };
+
+            document.getElementById('deleteOnlyFromCollectionBtn').onclick = async () => {
+                const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
+                await deleteDoc(cardDocRef);
+                modal.classList.add('hidden');
+                restoreModalButtons();
+            };
+
+            document.getElementById('deleteAllBtn').onclick = async () => {
+                const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
+                await deleteDoc(cardDocRef);
+                await removeCardFromAllDecksByOracleId(cardOracleId);
+                modal.classList.add('hidden');
+                restoreModalButtons();
+            };
+
+            document.getElementById('cancelDeleteBtn').onclick = () => {
+                modal.classList.add('hidden');
+                restoreModalButtons();
+            };
+            
+            modal.classList.remove('hidden');
+
+        } else {
+            // Card is not in any deck, show the simple confirmation
+            showModal('modalRemoveCard', true, async () => {
+                const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
+                await deleteDoc(cardDocRef);
+            });
+        }
     });
 }
 
@@ -1125,7 +1223,9 @@ function renderTable() {
         return;
     }
     
-    const filteredResults = searchResults.filter(r => {
+    let filteredResults = [...searchResults];
+
+    filteredResults = searchResults.filter(r => {
         const cardColors = r.result.colors;
         const typeLine = r.result.type_line;
         
@@ -1147,8 +1247,32 @@ function renderTable() {
     // Sort filtered results before rendering
     if (currentSort.column) {
         filteredResults.sort((a, b) => {
-            let aVal = a.sortable[currentSort.column];
-            let bVal = b.sortable[currentSort.column];
+            let aVal, bVal;
+
+            const getSortableValue = (item, column) => {
+                const card = item.result;
+                if (!card) return null;
+
+                switch (column) {
+                    case 'ita-name':
+                        return card.printed_name || card.name || '';
+                    case 'eng-name':
+                        return card.name || '';
+                    case 'color':
+                        return (card.colors && card.colors.length > 0) ? card.colors.join('') : 'z'; // 'z' to put colorless last
+                    case 'set':
+                        return card.set_name || card.set || '';
+                    case 'eur-price':
+                        return parseFloat(card.prices?.eur) || 0;
+                    case 'usd-price':
+                        return parseFloat(card.prices?.usd) || 0;
+                    default:
+                        return '';
+                }
+            };
+
+            aVal = getSortableValue(a, currentSort.column);
+            bVal = getSortableValue(b, currentSort.column);
             
             if (typeof aVal === 'string') {
                 return currentSort.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
@@ -1276,12 +1400,21 @@ if ('webkitSpeechRecognition' in window) {
 // Logic for tabs
 document.querySelectorAll('.tab-button').forEach(button => {
     button.addEventListener('click', (e) => {
-        // Remove 'active' class from all buttons and hide all content
-        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'border-b-2'));
+        // Remove active styles from all buttons
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.remove('active', 'text-purple-700', 'border-purple-500');
+            btn.classList.add('text-gray-500', 'border-transparent');
+        });
+        
+        // Hide all content
         document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
 
-        // Add 'active' class to the clicked button and show corresponding content
+        // Add active styles to the clicked button
         e.target.classList.add('active');
+        e.target.classList.remove('text-gray-500', 'border-transparent');
+        e.target.classList.add('text-purple-700', 'border-purple-500');
+
+        // Show corresponding content
         const tabId = e.target.dataset.tab;
         document.getElementById(tabId).classList.remove('hidden');
         
@@ -1289,7 +1422,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
         if (resultsSection) {
             if (tabId === 'search-tab') {
                 resultsSection.classList.remove('hidden');
-                renderTable(); // Refresh the table when switching to this tab
+                renderTable();
             } else {
                 resultsSection.classList.add('hidden');
             }
@@ -1427,7 +1560,7 @@ document.getElementById('saveJsonBtn').addEventListener('click', () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'mtg_prices_data.json';
+    a.download = 'mtg_collection_data.json';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1479,6 +1612,70 @@ document.getElementById('loadJsonFile').addEventListener('change', (e) => {
             }
         } catch (error) {
             console.error("Errore nel parsing o nel caricamento del JSON:", error);
+            showModal('modalJsonLoadError');
+        } finally {
+            if (progress) progress.classList.add('hidden');
+        }
+    };
+    reader.readAsText(file);
+});
+
+// Event listener for save decks button
+document.getElementById('saveDecksBtn').addEventListener('click', () => {
+    if (decks.length === 0) {
+        showModal('modalNoDecksToSave');
+        return;
+    }
+
+    const jsonString = JSON.stringify(decks, null, 2);
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'mtg_decks_data.json';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showModal('modalDecksSaved');
+});
+
+// Event listener for load decks button
+document.getElementById('loadDecksFile').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        const progress = document.getElementById("progress");
+        const progressText = document.getElementById("progressText");
+        if (progress) progress.classList.remove('hidden');
+        if (progressText) progressText.textContent = translations[activeLang].processing;
+        try {
+            const data = JSON.parse(event.target.result);
+            if (Array.isArray(data)) { 
+                const decksRef = collection(db, `artifacts/${appId}/users/${userId}/decks`);
+
+                if (progressText) progressText.textContent = "Cancellazione dei mazzi esistenti...";
+                const existingDecksSnapshot = await getDocs(decksRef);
+                const deletePromises = existingDecksSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
+                await Promise.all(deletePromises);
+                console.log("Existing decks cleared.");
+
+                if (progressText) progressText.textContent = "Aggiunta dei nuovi mazzi...";
+                const addPromises = data.map(deckData => {
+                    const { id, ...deckToSave } = deckData;
+                    return addDoc(decksRef, deckToSave);
+                });
+                await Promise.all(addPromises);
+                console.log("New decks added from JSON.");
+
+                showModal('modalDecksLoaded', false, null, null, { 'DECK_COUNT': data.length });
+            } else {
+                showModal('modalInvalidDecksJson');
+            }
+        } catch (error) {
+            console.error("Errore nel parsing o nel caricamento del JSON dei mazzi:", error);
             showModal('modalJsonLoadError');
         } finally {
             if (progress) progress.classList.add('hidden');
@@ -1639,9 +1836,14 @@ function renderDeckCards() {
         const cardItem = document.createElement('div');
         cardItem.className = 'flex items-center justify-between p-2 bg-gray-200 rounded-lg';
         const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
+        const imageUrl = card.image_uris?.art_crop || `https://placehold.co/60x44/E5E7EB/9CA3AF?text=N/A`;
+
         cardItem.innerHTML = `
-            <span>${cardName}</span>
-            <button class="remove-from-deck-btn bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full" data-card-id="${card.id}">Rimuovi</button>
+            <div class="flex items-center gap-3">
+                <img src="${imageUrl}" alt="${cardName}" class="w-16 rounded-md">
+                <span class="font-semibold">${cardName}</span>
+            </div>
+            <button class="remove-from-deck-btn bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full" data-card-id="${card.id}">${translations[activeLang].removeBtn}</button>
         `;
         cardItem.querySelector('.remove-from-deck-btn').addEventListener('click', async () => {
             removeCardFromDeck(card.id);
@@ -1698,17 +1900,28 @@ async function removeCardFromDeck(cardId) {
     }
 }
 
-async function removeCardFromAllDecks(cardId) {
-    if (!db || !userId) return;
-    const allDecks = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/decks`)));
-    allDecks.docs.forEach(async deckDoc => {
-        const deck = { id: deckDoc.id, ...deckDoc.data() };
-        const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deck.id);
-        const updatedCards = deck.cards.filter(card => card.id !== cardId);
-        if (updatedCards.length !== deck.cards.length) {
-            await updateDoc(deckDocRef, { cards: updatedCards });
+async function removeCardFromAllDecksByOracleId(oracleId) {
+    if (!db || !userId || !oracleId) return;
+
+    const decksRef = collection(db, `artifacts/${appId}/users/${userId}/decks`);
+    const decksSnapshot = await getDocs(decksRef);
+    const updatePromises = [];
+
+    decksSnapshot.forEach(deckDoc => {
+        const deckData = deckDoc.data();
+        if (deckData.cards && Array.isArray(deckData.cards)) {
+            const originalCardCount = deckData.cards.length;
+            const updatedCards = deckData.cards.filter(card => card.oracle_id !== oracleId);
+
+            if (updatedCards.length < originalCardCount) {
+                const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckDoc.id);
+                updatePromises.push(updateDoc(deckDocRef, { cards: updatedCards }));
+            }
         }
     });
+
+    await Promise.all(updatePromises);
+    console.log(`Card with oracle_id ${oracleId} removed from all relevant decks.`);
 }
 
 // Event listeners for Deck builder
@@ -1736,10 +1949,21 @@ document.getElementById('collectionSearchInput').addEventListener('input', () =>
 // Update the tab change logic to show/hide the results section
 document.querySelectorAll('.tab-button').forEach(button => {
     button.addEventListener('click', (e) => {
-        document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active', 'border-b-2'));
+        // Remove active styles from all buttons
+        document.querySelectorAll('.tab-button').forEach(btn => {
+            btn.classList.remove('active', 'text-purple-700', 'border-purple-500');
+            btn.classList.add('text-gray-500', 'border-transparent');
+        });
+        
+        // Hide all content
         document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
 
+        // Add active styles to the clicked button
         e.target.classList.add('active');
+        e.target.classList.remove('text-gray-500', 'border-transparent');
+        e.target.classList.add('text-purple-700', 'border-purple-500');
+
+        // Show corresponding content
         const tabId = e.target.dataset.tab;
         document.getElementById(tabId).classList.remove('hidden');
         
