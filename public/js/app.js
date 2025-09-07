@@ -39,84 +39,56 @@ import {
   fetchAndRenderCollectionPage as collectionFetchAndRenderCollectionPage,
   calculateAndDisplayTotalValue as collectionCalculateAndDisplayTotalValue
 } from './modules/collectionManagement.js';
+import * as state from './modules/state.js';
 
 
-let allSets = [];
-let searchResults = [];
-let activeFilters = ['all', 'W', 'U', 'B', 'R', 'G', 'multi', 'incolor'];
-let activeLang = 'ita';
-let currentCardDetails = null;
-
-// Firebase & Firestore setup
-let db;
-let auth;
-let userId;
-let decks = [];
-let currentDeck = null;
-let currentDeckId = null;
-
-// Pagination state
-let lastVisible = null;
-let firstVisible = null;
-let pageFirstDocs = [null]; // Start with null for the first page
-let currentPage = 1;
-let cardsPerPage = 50;
-
-
-// --- CONFIGURAZIONE FIREBASE PER ESECUZIONE LOCALE ---
-// Per eseguire questo file al di fuori di Canvas (es. aprendolo in Chrome),
-// devi inserire qui la tua configurazione personale di Firebase.
-// 1. Vai su https://console.firebase.google.com/ e crea un nuovo progetto.
-// 2. Nelle impostazioni del progetto (icona ingranaggio), crea una "Web App".
-// 3. Copia l'oggetto di configurazione (inizia con "const firebaseConfig = {") e incollalo qui sotto,
-//    sostituendo l'oggetto 'localFirebaseConfig'.
 const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
 
 // Initialize Firebase
 const firebaseInstances = initializeFirebase();
 if (firebaseInstances) {
     const { app, db: firebaseDb, auth: firebaseAuth } = firebaseInstances;
-    db = firebaseDb;
-    auth = firebaseAuth;
+    state.setDb(firebaseDb);
+    state.setAuth(firebaseAuth);
     
     // Set up authentication
     authenticateUser(async (user) => {
         if (user) {
-            userId = user.uid;
-            console.log("User authenticated:", userId);
+            state.setUserId(user.uid);
+            console.log("User authenticated:", state.userId);
             
             // Set up real-time listener for decks
-            setupDecksListener(userId, (decksData) => {
-                decks = decksData;
-                console.log("Decks loaded:", decks);
+            setupDecksListener(state.userId, (decksData) => {
+                state.setDecks(decksData);
+                console.log("Decks loaded:", state.decks);
                 const activeButton = document.querySelector('.tab-button.active');
                 if (!activeButton) return;
                 const currentTab = activeButton.dataset.tab;
                 
                 if (currentTab === 'decks-tab') {
                     const deckEditor = document.getElementById('deck-editor');
-                    if (!deckEditor.classList.contains('hidden') && currentDeckId) {
-                        const updatedDeck = decks.find(d => d.id === currentDeckId);
+                    if (!deckEditor.classList.contains('hidden') && state.currentDeckId) {
+                        const updatedDeck = state.decks.find(d => d.id === state.currentDeckId);
                         if (updatedDeck) {
-                            currentDeck = updatedDeck;
-                            renderDeckCards(currentDeck, activeLang, async (cardId) => {
-                                await firebaseRemoveCardFromDeck(userId, currentDeckId, cardId, currentDeck.cards || []);
+                            state.setCurrentDeck(updatedDeck);
+                            renderDeckCards(state.currentDeck, state.activeLang, async (cardId) => {
+                                await firebaseRemoveCardFromDeck(state.userId, state.currentDeckId, cardId, state.currentDeck.cards || []);
                             });
                         } else {
                             document.getElementById('decks-list').classList.remove('hidden');
                             deckEditor.classList.add('hidden');
-                            renderDecksList(decks, (deckId) => enterDeckEditor(deckId), 
+                            renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
                                 (deckId) => showModalLocal('modalRemoveCard', true, async () => {
-                                    const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
+                                    const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
                                     await deleteDoc(deckDocRef);
-                                }), activeLang);
+                                }), state.activeLang);
                         }
                     } else {
-                        renderDecksList(decks, (deckId) => enterDeckEditor(deckId), 
+                        renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
                             (deckId) => showModalLocal('modalRemoveCard', true, async () => {
-                                const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
+                                const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
                                 await deleteDoc(deckDocRef);
-                            }), activeLang);
+                            }), state.activeLang);
                     }
                 }
             });
@@ -127,7 +99,7 @@ if (firebaseInstances) {
             
         } else {
             console.log("No user authenticated.");
-            userId = null;
+            state.setUserId(null);
         }
     });
 
@@ -150,15 +122,16 @@ let apiStatus = 'connecting';
 
 // Function to update the visual API status
 function updateApiStatusLocal(status, messageKey) {
-    updateApiStatus(status, messageKey, activeLang);
+    updateApiStatus(status, messageKey, state.activeLang);
 }
 
 // Fetch all sets from Scryfall on app startup
 async function loadSets() {
   updateApiStatusLocal('connecting', 'apiStatusConnecting');
   try {
-    allSets = await fetchSets();
-    if (allSets.length > 0) {
+    const sets = await fetchSets();
+    state.setAllSets(sets);
+    if (state.allSets.length > 0) {
       updateApiStatusLocal('ready', 'apiStatusReady');
       populateSetSelectLocal();
     } else {
@@ -172,7 +145,7 @@ async function loadSets() {
 
 // Populate the set selector
 function populateSetSelectLocal() {
-  populateSetSelect(allSets, activeLang);
+  populateSetSelect(state.allSets, state.activeLang);
 }
 
 // Function to fetch and render cards for a specific set
@@ -186,21 +159,21 @@ async function fetchAndRenderSetCards(setCode) {
     try {
         const cards = await fetchSetCards(setCode);
         totalCardsFetched = cards.length;
-        document.getElementById("progressText").textContent = `${getTranslation('processing', activeLang)} ${totalCardsFetched} carte...`;
+        document.getElementById("progressText").textContent = `${getTranslation('processing', state.activeLang)} ${totalCardsFetched} carte...`;
 
         cards.forEach(card => {
                 const cardElement = document.createElement('div');
                 cardElement.className = 'card-tile p-2 bg-gray-100 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer';
                 
                 const imageUrl = card.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
-                const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
+                const cardName = state.activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
                 
                 cardElement.innerHTML = `
                     <img src="${imageUrl}" alt="${cardName}" class="w-full rounded-lg mb-2">
                     <p class="text-sm text-center font-semibold text-gray-800">${cardName}</p>
                 `;
                 cardElement.addEventListener('click', () => {
-                    currentCardDetails = card;
+                    state.setCurrentCardDetails(card);
                     showCardDetailsModalLocal(card);
                 });
                 cardsContainer.appendChild(cardElement);
@@ -230,12 +203,12 @@ function showCardDetailsModalLocal(card) {
 
 // Show a generic modal with a custom message
 function showModalLocal(messageKey, showCancel = false, onOk = null, onCancel = null, replacements = {}) {
-    showModal(messageKey, showCancel, onOk, onCancel, replacements, activeLang);
+    showModal(messageKey, showCancel, onOk, onCancel, replacements, state.activeLang);
 }
 
 // Function to add a card to the collection table
 async function addCardToCollection(cardData) {
-    await collectionAddCardToCollection(cardData, userId,
+    await collectionAddCardToCollection(cardData, state.userId,
         () => {
             // Always refresh the first page to show the new card.
             fetchAndRenderCollectionPageLocal('first');
@@ -248,44 +221,44 @@ async function addCardToCollection(cardData) {
 
 // Main function to fetch and render a page of the collection
 async function fetchAndRenderCollectionPageLocal(direction = 'first') {
-    if (!db) return;
+    if (!state.db) return;
     
     // Read search term from DOM (this replaces the buildLocalCollectionQuery functionality)
     const searchTerm = document.getElementById('collectionFilterInput').value.trim();
     
     const paginationState = {
-        currentPage,
-        pageFirstDocs,
-        lastVisible,
-        firstVisible
+        currentPage: state.currentPage,
+        pageFirstDocs: state.pageFirstDocs,
+        lastVisible: state.lastVisible,
+        firstVisible: state.firstVisible
     };
     
     const result = await collectionFetchAndRenderCollectionPage(
-        direction, userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, 
-        activeFilters, activeLang,
+        direction, state.userId, state.cardsPerPage, state.pageFirstDocs, state.lastVisible, state.currentPage, 
+        state.activeFilters, state.activeLang,
         (cards) => {
-            searchResults = cards;
+            state.setSearchResults(cards);
         },
         (error) => {
             console.error("Error fetching collection page:", error);
             alert("Errore nel caricare i dati. Potrebbe essere necessario creare un indice in Firestore per l'ordinamento richiesto. Controlla la console per il link per crearlo.");
         },
-        appId, decks, searchResults, searchTerm, currentSort.column, currentSort.direction
+        appId, state.decks, state.searchResults, searchTerm, state.currentSort.column, state.currentSort.direction
     );
     
     if (result) {
-        currentPage = result.currentPage;
-        pageFirstDocs = result.pageFirstDocs;
-        lastVisible = result.lastVisible;
-        firstVisible = result.firstVisible;
+        state.setCurrentPage(result.currentPage);
+        state.setPageFirstDocs(result.pageFirstDocs);
+        state.setLastVisible(result.lastVisible);
+        state.setFirstVisible(result.firstVisible);
     }
 }
 
 
 async function calculateAndDisplayTotalValueLocal() {
-    if (!db || !userId) return;
+    if (!state.db || !state.userId) return;
     
-    await collectionCalculateAndDisplayTotalValue(userId, appId, activeLang,
+    await collectionCalculateAndDisplayTotalValue(state.userId, appId, state.activeLang,
         () => {
             // Success callback - value calculation completed
         },
@@ -376,7 +349,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
             }
         }
         
-        if (tabId === 'explore-tab' && allSets.length > 0) {
+        if (tabId === 'explore-tab' && state.allSets.length > 0) {
             const setSelect = document.getElementById('setSelect');
             if (setSelect.value) {
                 fetchAndRenderSetCards(setSelect.value);
@@ -429,7 +402,7 @@ async function handleSearch() {
     
     await handleSearchWithUI(
         cardName,
-        activeLang,
+        state.activeLang,
         // onSearchStart callback
         (cardName) => {
             const searchCardBtn = document.getElementById('searchCardBtn');
@@ -438,9 +411,9 @@ async function handleSearch() {
             
             // Disable the button and show progress
             searchCardBtn.disabled = true;
-            searchCardBtn.textContent = getTranslation('searchAddBtn-loading', activeLang);
+            searchCardBtn.textContent = getTranslation('searchAddBtn-loading', state.activeLang);
             if (progress) progress.classList.remove('hidden');
-            if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} "${cardName}"...`;
+            if (progressText) progressText.textContent = `${getTranslation('processing', state.activeLang)} "${cardName}"...`;
         },
         // onSearchComplete callback
         () => {
@@ -449,7 +422,7 @@ async function handleSearch() {
             
             // Re-enable the button and hide progress
             searchCardBtn.disabled = false;
-            searchCardBtn.textContent = getTranslation('searchAddBtn-completed', activeLang);
+            searchCardBtn.textContent = getTranslation('searchAddBtn-completed', state.activeLang);
             if (progress) progress.classList.add('hidden');
             
             // Clear input
@@ -482,7 +455,7 @@ document.getElementById('processCsv').addEventListener('click', async () => {
     }
 
     processCsvBtn.disabled = true;
-    processCsvBtn.textContent = getTranslation('processCsvBtn-loading', activeLang);
+    processCsvBtn.textContent = getTranslation('processCsvBtn-loading', state.activeLang);
     const reader = new FileReader();
     reader.onload = async (e) => {
         const text = e.target.result;
@@ -497,10 +470,10 @@ document.getElementById('processCsv').addEventListener('click', async () => {
             const [name, set] = line.split(';').map(s => s.trim());
             
             if (name) {
-                if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} ${i + 1}/${lines.length}: "${name}"...`;
+                if (progressText) progressText.textContent = `${getTranslation('processing', state.activeLang)} ${i + 1}/${lines.length}: "${name}"...`;
                 
                 // Use findCardAndHandleResults directly with callbacks for CSV processing
-                await findCardAndHandleResults(name, activeLang, 
+                await findCardAndHandleResults(name, state.activeLang, 
                     (card) => {
                         // Single card found - add it directly
                         addCardToCollection(card);
@@ -522,19 +495,19 @@ document.getElementById('processCsv').addEventListener('click', async () => {
         fetchAndRenderCollectionPageLocal('first');
         showModal('modalCsvComplete');
         processCsvBtn.disabled = false;
-        processCsvBtn.textContent = getTranslation('processCsvBtn-completed', activeLang);
+        processCsvBtn.textContent = getTranslation('processCsvBtn-completed', state.activeLang);
     };
     reader.readAsText(file);
 });
 
 // Event listener for JSON save button
 document.getElementById('saveJsonBtn').addEventListener('click', () => {
-    if (searchResults.length === 0) {
+    if (state.searchResults.length === 0) {
         showModal('modalNoCardsToSave');
         return;
     }
 
-    const exportData = searchResults.map(r => r.result);
+    const exportData = state.searchResults.map(r => r.result);
     const jsonString = JSON.stringify(exportData, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -558,11 +531,11 @@ document.getElementById('loadJsonFile').addEventListener('change', (e) => {
         const progress = document.getElementById("progress");
         const progressText = document.getElementById("progressText");
         if (progress) progress.classList.remove('hidden');
-        if (progressText) progressText.textContent = getTranslation('processing', activeLang);
+        if (progressText) progressText.textContent = getTranslation('processing', state.activeLang);
         try {
             const data = JSON.parse(event.target.result);
             if (Array.isArray(data)) {
-                const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+                const collectionRef = collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`);
 
                 // 1. Fetch all existing documents to delete them reliably
                 if (progressText) progressText.textContent = "Cancellazione della collezione esistente...";
@@ -603,12 +576,12 @@ document.getElementById('loadJsonFile').addEventListener('change', (e) => {
 
 // Event listener for save decks button
 document.getElementById('saveDecksBtn').addEventListener('click', () => {
-    if (decks.length === 0) {
+    if (state.decks.length === 0) {
         showModal('modalNoDecksToSave');
         return;
     }
 
-    const jsonString = JSON.stringify(decks, null, 2);
+    const jsonString = JSON.stringify(state.decks, null, 2);
     const blob = new Blob([jsonString], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -631,13 +604,13 @@ document.getElementById('loadDecksFile').addEventListener('change', (e) => {
         const progress = document.getElementById("progress");
         const progressText = document.getElementById("progressText");
         if (progress) progress.classList.remove('hidden');
-        if (progressText) progressText.textContent = getTranslation('processing', activeLang);
+        if (progressText) progressText.textContent = getTranslation('processing', state.activeLang);
         try {
             const data = JSON.parse(event.target.result);
             if (Array.isArray(data)) { 
                 if (progressText) progressText.textContent = "Importazione dei mazzi...";
                 
-                const success = await firebaseImportDecks(userId, data);
+                const success = await firebaseImportDecks(state.userId, data);
                 if (success) {
                     console.log("New decks added from JSON.");
                     showModal('modalDecksLoaded', false, null, null, { 'DECK_COUNT': data.length });
@@ -666,8 +639,8 @@ document.querySelectorAll('#resultsTable .sortable').forEach(header => {
     let direction = 'asc';
 
     // If it's the same column, reverse the direction
-    if (currentSort.column === column) {
-      direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+    if (state.currentSort.column === column) {
+      direction = state.currentSort.direction === 'asc' ? 'desc' : 'asc';
     }
 
     // Reset all sort icons
@@ -679,7 +652,7 @@ document.querySelectorAll('#resultsTable .sortable').forEach(header => {
     const icon = header.querySelector('.sort-icon');
     icon.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
 
-    currentSort = { column, direction };
+    state.setCurrentSort({ column, direction });
     fetchAndRenderCollectionPageLocal('first');
   });
 });
@@ -691,33 +664,35 @@ document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(
         
         if (selectedColor === 'all' && e.target.checked) {
             // Use clearAllFilters function
-            activeFilters = clearAllFilters((defaultFilters) => {
+            const newFilters = clearAllFilters((defaultFilters) => {
                 // Update DOM to reflect all filters are checked
                 document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
                     c.checked = true;
                     c.closest('label').classList.add('checked');
                 });
             });
+            state.setActiveFilters(newFilters);
         } else if (selectedColor === 'all' && !e.target.checked) {
             // Clear all filters
             document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(c => {
                 c.checked = false;
                 c.closest('label').classList.remove('checked');
             });
-            activeFilters = [];
+            state.setActiveFilters([]);
         } else {
             document.getElementById('filter-all').checked = false;
             document.getElementById('filter-all').closest('label').classList.remove('checked');
             
             e.target.closest('label').classList.toggle('checked', e.target.checked);
             
-            activeFilters = Array.from(document.querySelectorAll('.color-filter-label input:checked')).map(c => c.dataset.color);
+            const newFilters = Array.from(document.querySelectorAll('.color-filter-label input:checked')).map(c => c.dataset.color);
+            state.setActiveFilters(newFilters);
 
             // If no filters are active, re-select "all"
-            if (activeFilters.length === 0) {
+            if (state.activeFilters.length === 0) {
                 document.getElementById('filter-all').checked = true;
                 document.getElementById('filter-all').closest('label').classList.add('checked');
-                activeFilters.push('all');
+                state.activeFilters.push('all');
             }
         }
         
@@ -728,8 +703,8 @@ document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(
 
 // Event listener for language select dropdown
 document.getElementById('lang-select').addEventListener('change', (e) => {
-    activeLang = e.target.value;
-    updateUI(activeLang);
+    state.setActiveLang(e.target.value);
+    updateUI(state.activeLang);
 });
 
 document.getElementById('closeDetailsModalBtn').addEventListener('click', () => {
@@ -738,45 +713,45 @@ document.getElementById('closeDetailsModalBtn').addEventListener('click', () => 
 
 // Deck Builder Logic
 async function addDeck(name) {
-    await firebaseAddDeck(userId, name);
+    await firebaseAddDeck(state.userId, name);
 }
 
 async function updateDeck(deckId, data) {
-    await firebaseUpdateDeck(userId, deckId, data);
+    await firebaseUpdateDeck(state.userId, deckId, data);
 }
 
 
 async function enterDeckEditor(deckId) {
-    currentDeckId = deckId;
-    currentDeck = decks.find(d => d.id === deckId);
-    if (!currentDeck) {
+    state.setCurrentDeckId(deckId);
+    state.setCurrentDeck(state.decks.find(d => d.id === deckId));
+    if (!state.currentDeck) {
         return;
     }
     document.getElementById('decks-list').classList.add('hidden');
     document.getElementById('deck-editor').classList.remove('hidden');
     
     const deckEditorNameInput = document.getElementById('deck-editor-name-input');
-    deckEditorNameInput.value = currentDeck.name;
+    deckEditorNameInput.value = state.currentDeck.name;
     deckEditorNameInput.addEventListener('change', async (e) => {
-        await updateDeck(currentDeckId, { name: e.target.value });
+        await updateDeck(state.currentDeckId, { name: e.target.value });
     });
 
-    renderDeckCards(currentDeck, activeLang, async (cardId) => {
-        await firebaseRemoveCardFromDeck(userId, currentDeckId, cardId, currentDeck.cards || []);
+    renderDeckCards(state.currentDeck, state.activeLang, async (cardId) => {
+        await firebaseRemoveCardFromDeck(state.userId, state.currentDeckId, cardId, state.currentDeck.cards || []);
     });
     
     // For renderCollectionCards, we need to get the collection data first
     const collectionSearchInput = document.getElementById('collectionSearchInput');
     const searchTerm = collectionSearchInput.value.toLowerCase();
-    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`), orderBy('name')));
+    const collectionSnapshot = await getDocs(query(collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`), orderBy('name')));
     const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
     const filteredCollection = fullCollection.filter(card => {
         const cardName = card.result.printed_name || card.result.name;
         return cardName.toLowerCase().includes(searchTerm);
     });
     
-    renderCollectionCards(filteredCollection, searchTerm, activeLang, async (cardData) => {
-        await firebaseAddCardToDeck(userId, currentDeckId, cardData, currentDeck.cards || []);
+    renderCollectionCards(filteredCollection, searchTerm, state.activeLang, async (cardData) => {
+        await firebaseAddCardToDeck(state.userId, state.currentDeckId, cardData, state.currentDeck.cards || []);
     });
 }
 
@@ -792,30 +767,30 @@ document.getElementById('createDeckBtn').addEventListener('click', async () => {
 });
 
 document.getElementById('backToDecksBtn').addEventListener('click', () => {
-    currentDeck = null;
-    currentDeckId = null;
+    state.setCurrentDeck(null);
+    state.setCurrentDeckId(null);
     document.getElementById('decks-list').classList.remove('hidden');
     document.getElementById('deck-editor').classList.add('hidden');
-    renderDecksList(decks, (deckId) => enterDeckEditor(deckId), 
+    renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
         (deckId) => showModalLocal('modalRemoveCard', true, async () => {
-            const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
+            const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
             await deleteDoc(deckDocRef);
-        }), activeLang); // Rerender the list to show the updated card counts
+        }), state.activeLang); // Rerender the list to show the updated card counts
 });
 
 document.getElementById('collectionSearchInput').addEventListener('input', async () => {
     // Re-render collection cards with new search term
     const collectionSearchInput = document.getElementById('collectionSearchInput');
     const searchTerm = collectionSearchInput.value.toLowerCase();
-    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`), orderBy('name')));
+    const collectionSnapshot = await getDocs(query(collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`), orderBy('name')));
     const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
     const filteredCollection = fullCollection.filter(card => {
         const cardName = card.result.printed_name || card.result.name;
         return cardName.toLowerCase().includes(searchTerm);
     });
     
-    renderCollectionCards(filteredCollection, searchTerm, activeLang, async (cardData) => {
-        await firebaseAddCardToDeck(userId, currentDeckId, cardData, currentDeck.cards || []);
+    renderCollectionCards(filteredCollection, searchTerm, state.activeLang, async (cardData) => {
+        await firebaseAddCardToDeck(state.userId, state.currentDeckId, cardData, state.currentDeck.cards || []);
     });
 });
 
@@ -823,7 +798,7 @@ document.getElementById('collectionSearchInput').addEventListener('input', async
 document.getElementById('nextPageBtn').addEventListener('click', () => fetchAndRenderCollectionPageLocal('next'));
 document.getElementById('prevPageBtn').addEventListener('click', () => fetchAndRenderCollectionPageLocal('prev'));
 document.getElementById('pageSizeSelect').addEventListener('change', (e) => {
-    cardsPerPage = parseInt(e.target.value, 10);
+    state.setCardsPerPage(parseInt(e.target.value, 10));
     fetchAndRenderCollectionPageLocal('first');
 });
 
@@ -877,7 +852,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
             }
         }
         
-        if (tabId === 'explore-tab' && allSets.length > 0) {
+        if (tabId === 'explore-tab' && state.allSets.length > 0) {
             const setSelect = document.getElementById('setSelect');
             if (setSelect.value) {
                 fetchAndRenderSetCards(setSelect.value);
@@ -892,5 +867,5 @@ document.querySelectorAll('.tab-button').forEach(button => {
 
 window.onload = () => {
   loadSets();
-  updateUI(activeLang);
+  updateUI(state.activeLang);
 };
