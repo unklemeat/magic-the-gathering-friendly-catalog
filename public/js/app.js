@@ -3,6 +3,7 @@ import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged }
 import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs, limit, startAfter, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getTranslation } from './modules/translations.js';
 
 setLogLevel('debug');
 
@@ -120,217 +121,23 @@ if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
 }
 
 
-// Translations object for managing all text content
-const translations = {
-  ita: {
-    title: 'MTG Friendly Catalog',
-    apiStatusTitle: 'Stato API',
-    apiStatusReady: 'Pronto per cercare carte',
-    apiStatusConnecting: 'Connessione in corso. In attesa di risposta da Scryfall.',
-    apiStatusError: 'Errore di connessione con l\'API Scryfall. Riprova a ricaricare la pagina.',
-    apiStatusBtn: 'API Ok',
-    processing: 'Elaborazione...',
-    tabSearch: 'Cerca Carta',
-    tabDecks: 'Mazzi',
-    tabExplore: 'Esplora Espansioni',
-    tabCsv: 'Carica CSV',
-    tabData: 'Gestisci Dati',
-    exploreTitle: 'Esplora Espansioni',
-    selectSetLabel: 'Seleziona un\'espansione:',
-    decksTitle: 'I Miei Mazzi',
-    newDeckPlaceholder: 'Inserisci il nome del nuovo mazzo...',
-    createDeckBtn: 'Crea Mazzo',
-    myDeckTitle: 'Il Mio Mazzo',
-    collectionTitle: 'La Mia Collezione',
-    collectionFilterPlaceholder: 'Cerca per nome nella collezione...',
-    backBtn: 'Indietro',
-    searchCardTitle: 'Cerca e Aggiungi una singola carta',
-    searchPlaceholder: 'Inserisci il nome della carta o parla...',
-    voiceSearchTooltip: 'Riconoscimento vocale supportato solo su alcuni browser',
-    searchAddBtn: 'Cerca & Aggiungi',
-    'searchAddBtn-loading': 'Caricamento...',
-    'searchAddBtn-completed': 'Cerca & Aggiungi',
-    csvTitle: 'Carica CSV con elenco carte',
-    processCsvBtn: 'Elabora CSV',
-    'processCsvBtn-loading': 'Elaborazione...',
-    'processCsvBtn-completed': 'Elabora CSV',
-    dataTitle: 'Gestisci Dati Applicazione',
-    collectionDataTitle: 'Gestisci La mia Collezione',
-    decksDataTitle: 'Gestisci i Mazzi',
-    saveJsonBtn: 'Salva Collezione',
-    loadJsonLabel: 'Carica Collezione',
-    saveDecksBtn: 'Salva Mazzi',
-    loadDecksLabel: 'Importa Mazzi',
-    resultsTitle: 'Collezione',
-    totalValueLabel: 'Valore Totale:',
-    filterAll: 'Tutti',
-    filterWhite: 'Bianco',
-    filterBlue: 'Blu',
-    filterBlack: 'Nero',
-    filterRed: 'Rosso',
-    filterGreen: 'Verde',
-    filterMulti: 'Multicolore',
-    filterColorless: 'Incolore/Terre',
-    tableColNum: '#',
-    tableColImage: 'Immagine',
-    tableColNameIta: 'Nome ITA',
-    tableColNameEng: 'Nome ENG',
-    tableColColor: 'Colore',
-    tableColSet: 'Set',
-    tableColPriceEur: 'Prezzo EUR',
-    tableColPriceUsd: 'USD Price',
-    tableColDetails: 'Dettagli',
-    tableColAction: 'Elimina',
-    modalNoCardName: 'Inserisci un nome di carta per la ricerca.',
-    modalNotFound: 'Nessun risultato trovato per la carta: ',
-    modalCsvComplete: 'Elaborazione CSV completata.',
-    modalNoCardsToSave: 'La tabella dei risultati è vuota. Aggiungi delle carte prima di salvare.',
-    modalJsonSaved: 'Dati salvati con successo come mtg_prices_data.json!',
-    modalInvalidJson: 'Il file JSON non è in un formato valido (non è un array di carte).',
-    modalJsonLoadError: 'Errore nel caricamento del file JSON. Assicurati che il formato sia corretto.',
-    modalCardsLoaded: 'Caricate CARD_COUNT carte dal file JSON.',
-    modalRemoveCard: 'Sei sicuro di voler rimuovere questa carta?',
-    modalApiOk: 'Connessione API Scryfall riuscita. Pronto all\'uso.',
-    modalApiError: 'Errore di connessione con l\'API Scryfall. Riprova a ricaricare la pagina.',
-    modalApiConnecting: 'Connessione in corso. In attesa di risposta da Scryfall.',
-    modalSpeechError: 'Errore durante il riconoscimento vocale. Riprova.',
-    modalNoImage: 'Nessuna immagine disponibile.',
-    modalNoOracleText: 'Nessun testo d\'oracolo disponibile.',
-    okBtn: 'OK',
-    cancelBtn: 'Annulla',
-    addToCollectionBtn: 'Aggiungi alla Collezione',
-    selectionModalTitle: 'Seleziona una carta',
-    removeBtn: 'Rimuovi',
-    modalDecksSaved: 'Tutti i mazzi sono stati salvati con successo in mtg_decks_data.json!',
-    modalNoDecksToSave: 'Non hai mazzi da salvare.',
-    modalDecksLoaded: 'Caricati DECK_COUNT mazzi dal file JSON.',
-    modalInvalidDecksJson: 'Il file JSON dei mazzi non è valido o è corrotto.',
-    modalRemoveFromDecks: 'Questa carta è presente nel mazzo/i: DECK_NAMES. Vuoi rimuoverla anche da lì?',
-    deleteOnlyFromCollectionBtn: 'Solo dalla Collezione',
-    deleteAllBtn: 'Sì, da tutto',
-    prevPageBtn: '&lt; Precedente',
-    nextPageBtn: 'Successivo &gt;',
-    pageInfoText: 'Pagina {currentPage}',
-    pageSizeLabel: 'Mostra:',
-    collectionSearchBtn: 'Cerca',
-    collectionResetBtn: 'Reset'
-  },
-  eng: {
-    title: 'MTG Friendly Catalog',
-    apiStatusTitle: 'API Status',
-    apiStatusReady: 'Ready to search for cards',
-    apiStatusConnecting: 'Connecting... Waiting for Scryfall response.',
-    apiStatusError: 'Connection error with Scryfall API. Please reload the page.',
-    apiStatusBtn: 'API Action',
-    processing: 'Processing...',
-    tabSearch: 'Search Card',
-    tabDecks: 'Decks',
-    tabExplore: 'Explore Sets',
-    tabCsv: 'Load CSV',
-    tabData: 'Manage Data',
-    exploreTitle: 'Explore Sets',
-    selectSetLabel: 'Select a set:',
-    decksTitle: 'My Decks',
-    newDeckPlaceholder: 'Enter new deck name...',
-    createDeckBtn: 'Create Deck',
-    myDeckTitle: 'My Deck',
-    collectionTitle: 'My Collection',
-    collectionFilterPlaceholder: 'Search in your collection...',
-    backBtn: 'Back',
-    searchCardTitle: 'Search & Add a single card',
-    searchPlaceholder: 'Enter card name or speak...',
-    voiceSearchTooltip: 'Voice recognition is supported only on some browsers',
-    searchAddBtn: 'Search & Add',
-    'searchAddBtn-loading': 'Searching...',
-    'searchAddBtn-completed': 'Search & Add',
-    csvTitle: 'Load CSV with card list',
-    processCsvBtn: 'Process CSV',
-    'processCsvBtn-loading': 'Processing...',
-    'processCsvBtn-completed': 'Process CSV',
-    dataTitle: 'Manage App Data',
-    collectionDataTitle: 'Manage My Collection',
-    decksDataTitle: 'Manage Decks',
-    saveJsonBtn: 'Save Collection',
-    loadJsonLabel: 'Load Collection',
-    saveDecksBtn: 'Save Decks',
-    loadDecksLabel: 'Import Decks',
-    resultsTitle: 'Collection',
-    totalValueLabel: 'Total Value:',
-    filterAll: 'All',
-    filterWhite: 'White',
-    filterBlue: 'Blue',
-    filterBlack: 'Black',
-    filterRed: 'Red',
-    filterGreen: 'Green',
-    filterMulti: 'Multicolored',
-    filterColorless: 'Colorless/Lands',
-    tableColNum: '#',
-    tableColImage: 'Image',
-    tableColNameIta: 'ITA Name',
-    tableColNameEng: 'ENG Name',
-    tableColColor: 'Color',
-    tableColSet: 'Set',
-    tableColPriceEur: 'EUR Price',
-    tableColPriceUsd: 'USD Price',
-    tableColDetails: 'Details',
-    tableColAction: 'Delete',
-    modalNoCardName: 'Please enter a card name to search.',
-    modalNotFound: 'No results found for card: ',
-    modalCsvComplete: 'CSV processing complete.',
-    modalNoCardsToSave: 'The results table is empty. Add some cards before saving.',
-    modalJsonSaved: 'Data successfully saved as mtg_prices_data.json!',
-    modalInvalidJson: 'The JSON file is not in a valid format (not an array of cards).',
-    modalJsonLoadError: 'Error loading the JSON file. Ensure the format is correct.',
-    modalCardsLoaded: 'Loaded CARD_COUNT cards from the JSON file.',
-    modalRemoveCard: 'Are you sure you want to remove this card?',
-    modalApiOk: 'Scryfall API connection successful. Ready to use.',
-    modalApiError: 'Connection error with Scryfall API. Please try reloading the page.',
-    modalApiConnecting: 'Connecting... Waiting for Scryfall response.',
-    modalSpeechError: 'Error during voice recognition. Please try again.',
-    modalNoImage: 'No image available.',
-    modalNoOracleText: 'No oracle text available.',
-    okBtn: 'OK',
-    cancelBtn: 'Cancel',
-    addToCollectionBtn: 'Add to Collection',
-    selectionModalTitle: 'Select a card',
-    removeBtn: 'Remove',
-    modalDecksSaved: 'All decks were successfully saved to mtg_decks_data.json!',
-    modalNoDecksToSave: 'You have no decks to save.',
-    modalDecksLoaded: 'Loaded DECK_COUNT decks from the JSON file.',
-    modalInvalidDecksJson: 'The decks JSON file is invalid or corrupted.',
-    modalRemoveFromDecks: 'This card is in the following deck(s): DECK_NAMES. Do you want to remove it from there as well?',
-    deleteOnlyFromCollectionBtn: 'Collection Only',
-    deleteAllBtn: 'Yes, from Everywhere',
-    prevPageBtn: '&lt; Previous',
-    nextPageBtn: 'Next &gt;',
-    pageInfoText: 'Page {currentPage}',
-    pageSizeLabel: 'Show:',
-    collectionSearchBtn: 'Search',
-    collectionResetBtn: 'Reset'
-  }
-};
+// Translations are now imported from the translations module
 
 // Function to translate the UI based on the selected language
 function updateUI(lang) {
     document.querySelectorAll('[data-lang-key]').forEach(element => {
         const key = element.dataset.langKey;
-        if (translations[lang] && translations[lang][key]) {
-            element.innerHTML = translations[lang][key];
-        }
+        element.innerHTML = getTranslation(key, lang);
     });
 
     document.querySelectorAll('[data-lang-placeholder]').forEach(element => {
         const key = element.dataset.langPlaceholder;
-        if (translations[lang] && translations[lang][key]) {
-            element.placeholder = translations[lang][key];
-        }
+        element.placeholder = getTranslation(key, lang);
     });
 
     document.querySelectorAll('[data-lang-title]').forEach(element => {
         const key = element.dataset.langTitle;
-        if (translations[lang] && translations[lang][key]) {
-            element.title = translations[lang][key];
-        }
+        element.title = getTranslation(key, lang);
     });
     updatePaginationUI(searchResults.length);
 }
@@ -388,7 +195,7 @@ function updateApiStatus(status, messageKey) {
     }
 
     if (statusBtn) {
-        statusBtn.textContent = translations[activeLang].apiStatusBtn;
+        statusBtn.textContent = getTranslation('apiStatusBtn', activeLang);
     }
 }
 
@@ -441,7 +248,7 @@ async function fetchAndRenderSetCards(setCode) {
             }
 
             totalCardsFetched += response.data.length;
-            document.getElementById("progressText").textContent = `${translations[activeLang].processing} ${totalCardsFetched} carte...`;
+            document.getElementById("progressText").textContent = `${getTranslation('processing', activeLang)} ${totalCardsFetched} carte...`;
 
             response.data.forEach(card => {
                 const cardElement = document.createElement('div');
@@ -602,13 +409,13 @@ function showCardDetailsModal(card) {
         img.className = "w-full rounded-lg shadow-lg";
         cardImageContainer.appendChild(img);
     } else {
-        const noImageText = translations[activeLang].modalNoImage;
+        const noImageText = getTranslation('modalNoImage', activeLang);
         cardImageContainer.innerHTML = `<div class="text-gray-400 text-center">${noImageText}</div>`;
     }
 
     const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
     cardNameInModal.textContent = cardName;
-    const descText = activeLang === 'ita' ? (card.oracle_text || translations.ita.modalNoOracleText) : (card.oracle_text || translations.eng.modalNoOracleText);
+    const descText = card.oracle_text || getTranslation('modalNoOracleText', activeLang);
     cardDescriptionInModal.textContent = descText;
 
     // Set a data attribute on the button to store the card data
@@ -627,7 +434,7 @@ function showModal(messageKey, showCancel = false, onOk = null, onCancel = null,
     const modalOkBtn = document.getElementById('modalOkBtn');
     const modalCancelBtn = document.getElementById('modalCancelBtn');
 
-    let message = translations[activeLang][messageKey] || messageKey;
+    let message = getTranslation(messageKey, activeLang);
     for (const [key, value] of Object.entries(replacements)) {
       message = message.replace(key, value);
     }
@@ -709,10 +516,10 @@ function addRow(data, uniqueId) {
         <td class="py-2 px-4 border font-semibold price-eur">${data.prices.eur ? `${data.prices.eur} €` : "—"}</td>
         <td class="py-2 px-4 border font-semibold price-usd">${data.prices.usd ? `${data.prices.usd} $` : "—"}</td>
         <td class="py-2 px-4 border">
-            <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-1 px-3 rounded-full text-xs details-btn">${translations[activeLang].tableColDetails}</button>
+            <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-1 px-3 rounded-full text-xs details-btn">${getTranslation('tableColDetails', activeLang)}</button>
         </td>
         <td class="py-2 px-4 border">
-            <button class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-full text-xs remove-btn" data-lang-key="tableColAction">${translations[activeLang].tableColAction}</button>
+            <button class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-full text-xs remove-btn" data-lang-key="tableColAction">${getTranslation('tableColAction', activeLang)}</button>
         </td>
     `;
     tableBody.appendChild(newRow);
@@ -723,7 +530,7 @@ function addRow(data, uniqueId) {
         if (e.target.dataset.populated) return; 
         e.target.dataset.populated = 'true'; 
 
-        e.target.innerHTML = `<option>${translations[activeLang]['searchAddBtn-loading']}</option>`;
+        e.target.innerHTML = `<option>${getTranslation('searchAddBtn-loading', activeLang)}</option>`;
 
         const cardInCollection = searchResults.find(r => r.id === uniqueId);
         if (cardInCollection && cardInCollection.result.oracle_id) {
@@ -804,19 +611,19 @@ function addRow(data, uniqueId) {
             const modalMessage = document.getElementById('modalMessage');
             const modalButtons = document.getElementById('modalButtons');
             
-            const message = translations[activeLang].modalRemoveFromDecks.replace('DECK_NAMES', deckNames);
+            const message = getTranslation('modalRemoveFromDecks', activeLang, { 'DECK_NAMES': deckNames });
             modalMessage.textContent = message;
 
             modalButtons.innerHTML = `
-                <button id="deleteOnlyFromCollectionBtn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${translations[activeLang].deleteOnlyFromCollectionBtn}</button>
-                <button id="deleteAllBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${translations[activeLang].deleteAllBtn}</button>
-                <button id="cancelDeleteBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors">${translations[activeLang].cancelBtn}</button>
+                <button id="deleteOnlyFromCollectionBtn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${getTranslation('deleteOnlyFromCollectionBtn', activeLang)}</button>
+                <button id="deleteAllBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${getTranslation('deleteAllBtn', activeLang)}</button>
+                <button id="cancelDeleteBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors">${getTranslation('cancelBtn', activeLang)}</button>
             `;
             
             const restoreModalButtons = () => {
                 modalButtons.innerHTML = `
-                    <button id="modalOkBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-full transition-colors" data-lang-key="okBtn">${translations[activeLang].okBtn}</button>
-                    <button id="modalCancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors hidden" data-lang-key="cancelBtn">${translations[activeLang].cancelBtn}</button>
+                    <button id="modalOkBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-full transition-colors" data-lang-key="okBtn">${getTranslation('okBtn', activeLang)}</button>
+                    <button id="modalCancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors hidden" data-lang-key="cancelBtn">${getTranslation('cancelBtn', activeLang)}</button>
                 `;
             };
 
@@ -1026,7 +833,7 @@ function updatePaginationUI(fetchedCount) {
     prevBtn.disabled = currentPage === 1;
     nextBtn.disabled = fetchedCount < cardsPerPage; 
 
-    pageInfo.innerHTML = translations[activeLang].pageInfoText.replace('{currentPage}', currentPage);
+    pageInfo.innerHTML = getTranslation('pageInfoText', activeLang, { '{currentPage}': currentPage });
 }
 
 async function calculateAndDisplayTotalValue() {
@@ -1081,7 +888,7 @@ if ('webkitSpeechRecognition' in window) {
     recognition.onstart = () => {
         isListening = true;
         micIcon.classList.add('text-green-500', 'mic-listening');
-        cardNameInput.placeholder = translations[activeLang].searchPlaceholder;
+        cardNameInput.placeholder = getTranslation('searchPlaceholder', activeLang);
     };
 
     recognition.onresult = (event) => {
@@ -1097,7 +904,7 @@ if ('webkitSpeechRecognition' in window) {
     recognition.onend = () => {
         isListening = false;
         micIcon.classList.remove('text-green-500', 'mic-listening');
-        cardNameInput.placeholder = translations[activeLang].searchPlaceholder;
+        cardNameInput.placeholder = getTranslation('searchPlaceholder', activeLang);
     };
 
     recognition.onerror = (event) => {
@@ -1204,17 +1011,17 @@ async function handleSearch() {
     
     // Disable the button and show progress
     searchCardBtn.disabled = true;
-    searchCardBtn.textContent = translations[activeLang]['searchAddBtn-loading']; // Use a loading translation
+    searchCardBtn.textContent = getTranslation('searchAddBtn-loading', activeLang); // Use a loading translation
     const progress = document.getElementById("progress");
     const progressText = document.getElementById("progressText");
     if (progress) progress.classList.remove('hidden');
-    if (progressText) progressText.textContent = `${translations[activeLang].processing} "${cardName}"...`;
+    if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} "${cardName}"...`;
     
     await findCardAndHandleResults(cardName);
     
     // Re-enable the button and hide progress
     searchCardBtn.disabled = false;
-    searchCardBtn.textContent = translations[activeLang]['searchAddBtn-completed'];
+    searchCardBtn.textContent = getTranslation('searchAddBtn-completed', activeLang);
     if (progress) progress.classList.add('hidden');
     
     cardNameInput.value = '';
@@ -1236,7 +1043,7 @@ document.getElementById('processCsv').addEventListener('click', async () => {
     }
 
     processCsvBtn.disabled = true;
-    processCsvBtn.textContent = translations[activeLang]['processCsvBtn-loading'];
+    processCsvBtn.textContent = getTranslation('processCsvBtn-loading', activeLang);
     const reader = new FileReader();
     reader.onload = async (e) => {
         const text = e.target.result;
@@ -1251,7 +1058,7 @@ document.getElementById('processCsv').addEventListener('click', async () => {
             const [name, set] = line.split(';').map(s => s.trim());
             
             if (name) {
-                if (progressText) progressText.textContent = `${translations[activeLang].processing} ${i + 1}/${lines.length}: "${name}"...`;
+                if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} ${i + 1}/${lines.length}: "${name}"...`;
                 const result = await findCardWithAPI({ name, set });
 
                 if (result.strategy !== 'not-found' && result.strategy !== 'api-error') {
@@ -1266,7 +1073,7 @@ document.getElementById('processCsv').addEventListener('click', async () => {
         fetchAndRenderCollectionPage('first');
         showModal('modalCsvComplete');
         processCsvBtn.disabled = false;
-        processCsvBtn.textContent = translations[activeLang]['processCsvBtn-completed'];
+        processCsvBtn.textContent = getTranslation('processCsvBtn-completed', activeLang);
     };
     reader.readAsText(file);
 });
@@ -1302,7 +1109,7 @@ document.getElementById('loadJsonFile').addEventListener('change', (e) => {
         const progress = document.getElementById("progress");
         const progressText = document.getElementById("progressText");
         if (progress) progress.classList.remove('hidden');
-        if (progressText) progressText.textContent = translations[activeLang].processing;
+        if (progressText) progressText.textContent = getTranslation('processing', activeLang);
         try {
             const data = JSON.parse(event.target.result);
             if (Array.isArray(data)) {
@@ -1375,7 +1182,7 @@ document.getElementById('loadDecksFile').addEventListener('change', (e) => {
         const progress = document.getElementById("progress");
         const progressText = document.getElementById("progressText");
         if (progress) progress.classList.remove('hidden');
-        if (progressText) progressText.textContent = translations[activeLang].processing;
+        if (progressText) progressText.textContent = getTranslation('processing', activeLang);
         try {
             const data = JSON.parse(event.target.result);
             if (Array.isArray(data)) { 
@@ -1567,7 +1374,7 @@ function renderDeckCards() {
                 <img src="${imageUrl}" alt="${cardName}" class="w-16 rounded-md">
                 <span class="font-semibold">${cardName}</span>
             </div>
-            <button class="remove-from-deck-btn bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full" data-card-id="${card.id}">${translations[activeLang].removeBtn}</button>
+            <button class="remove-from-deck-btn bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full" data-card-id="${card.id}">${getTranslation('removeBtn', activeLang)}</button>
         `;
         cardItem.querySelector('.remove-from-deck-btn').addEventListener('click', async () => {
             removeCardFromDeck(card.id);
