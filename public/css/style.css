@@ -1,0 +1,138 @@
+body { font-family: 'Inter', sans-serif; }
+  
+  /* Custom modal styles */
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+  }
+  .modal-content {
+    max-width: 90%;
+    width: 400px;
+    animation: modal-fade-in 0.3s ease-out;
+  }
+  @keyframes modal-fade-in {
+    from { opacity: 0; transform: translateY(-20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Modal for card details */
+  .card-details-modal {
+    max-width: 800px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
+
+  /* Table sorting icon styles */
+  .sort-icon {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    vertical-align: middle;
+    margin-left: 4px;
+    transition: transform 0.3s;
+  }
+  .sort-asc {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-bottom: 5px solid #374151;
+  }
+  .sort-desc {
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    border-top: 5px solid #374151;
+  }
+
+  /* Status classes */
+  .bg-status-found { background-color: #d1fae5; }
+  .bg-status-not-found { background-color: #fee2e2; }
+  
+  /* Table styles */
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #E5E7EB; padding: 5px 8px; text-align: left; }
+  
+  /* Mic animation */
+  .mic-listening {
+    animation: pulse-mic 1s infinite cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  }
+  @keyframes pulse-mic {
+    0% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    }
+    70% {
+      transform: scale(1.1);
+      box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+    }
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+    }
+  }
+  
+  .tab-content.hidden {
+      display: none;
+  }
+
+  /* Table container for responsiveness */
+  .table-container {
+    overflow-x: auto;
+  }
+
+  /* Specific styles for the set select dropdown */
+  .lang-select {
+    min-width: 120px;
+  }
+  
+  /* Color symbols */
+  .color-symbol {
+    display: inline-block;
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    margin: 0 2px;
+    border: 1px solid #333;
+    vertical-align: middle;
+  }
+  .color-w { background-color: #f8f7d9; }
+  .color-u { background-color: #b9d8ee; }
+  .color-b { background-color: #000; } /* Darker black for better contrast */
+  .color-r { background-color: #e99086; }
+  .color-g { background-color: #a7d088; }
+  .color-c { background-color: #d1d1d1; }
+  .color-multi { background-color: #fdd206; border: 1px solid #333; }
+  .color-land { background-color: #f0f0f0; border: 1px solid #333; }
+  
+  /* Color filter buttons */
+  .color-filter-btn {
+    @apply p-2 rounded-full border-2 transition-all duration-200;
+  }
+  .color-filter-btn.active {
+    @apply border-purple-500 shadow-md;
+  }
+  
+  /* Checkbox styling */
+  .color-filter-label {
+    @apply flex items-center p-2 rounded-xl border-2 border-gray-300 cursor-pointer transition-all duration-200;
+  }
+  .color-filter-label:hover {
+    @apply border-purple-400;
+  }
+  .color-filter-label.checked {
+    @apply border-purple-500 bg-purple-100 shadow-md;
+  }
+
+  .card-selection-modal {
+    max-width: 800px;
+    width: 95%;
+    max-height: 90vh;
+    overflow-y: auto;
+  }
