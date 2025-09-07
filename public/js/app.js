@@ -41,7 +41,6 @@ import {
   reindexRows,
   renderTable,
   updatePaginationUI,
-  calculateAndDisplayTotalValue,
   renderDecksList,
   enterDeckEditor,
   renderDeckCards,
@@ -69,6 +68,27 @@ import {
   getFilterDisplayName,
   validateSearchInput
 } from './modules/searchFilter.js';
+import {
+  addCardToCollection as collectionAddCardToCollection,
+  deleteCardFromCollection,
+  fetchAndRenderCollectionPage as collectionFetchAndRenderCollectionPage,
+  calculateAndDisplayTotalValue as collectionCalculateAndDisplayTotalValue,
+  renderCollectionCards as collectionRenderCollectionCards,
+  addCardToDeck as collectionAddCardToDeck,
+  removeCardFromDeck as collectionRemoveCardFromDeck,
+  removeCardFromAllDecksByOracleId as collectionRemoveCardFromAllDecksByOracleId,
+  handleSetChange as collectionHandleSetChange,
+  handleDeleteCard as collectionHandleDeleteCard,
+  processCsvFile,
+  processJsonFile,
+  exportCollectionToJson,
+  exportDecksToJson,
+  handlePagination,
+  handlePageSizeChange,
+  handleCollectionSearch,
+  resetCollectionFilters,
+  getCollectionStatistics
+} from './modules/collectionManagement.js';
 
 
 let allSets = [];
@@ -129,21 +149,31 @@ if (firebaseInstances) {
                         const updatedDeck = decks.find(d => d.id === currentDeckId);
                         if (updatedDeck) {
                             currentDeck = updatedDeck;
-                            renderDeckCards();
+                            renderDeckCards(currentDeck, activeLang, async (cardId) => {
+                                await firebaseRemoveCardFromDeck(userId, currentDeckId, cardId, currentDeck.cards || []);
+                            });
                         } else {
                             document.getElementById('decks-list').classList.remove('hidden');
                             deckEditor.classList.add('hidden');
-                            renderDecksList();
+                            renderDecksList(decks, (deckId) => enterDeckEditor(deckId), 
+                                (deckId) => showModalLocal('modalRemoveCard', true, async () => {
+                                    const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
+                                    await deleteDoc(deckDocRef);
+                                }), activeLang);
                         }
                     } else {
-                        renderDecksList();
+                        renderDecksList(decks, (deckId) => enterDeckEditor(deckId), 
+                            (deckId) => showModalLocal('modalRemoveCard', true, async () => {
+                                const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
+                                await deleteDoc(deckDocRef);
+                            }), activeLang);
                     }
                 }
             });
 
             // Esegui il fetch della prima pagina della collezione e calcola i totali
-            fetchAndRenderCollectionPage('first');
-            calculateAndDisplayTotalValue();
+            fetchAndRenderCollectionPageLocal('first');
+            calculateAndDisplayTotalValueLocal();
             
         } else {
             console.log("No user authenticated.");
@@ -243,8 +273,6 @@ async function fetchAndRenderSetCards(setCode) {
 }
 
 
-
-
 // New unified search function
 async function findCardAndHandleResultsLocal(cardName) {
     await findCardAndHandleResults(cardName, activeLang, 
@@ -275,258 +303,16 @@ function showModalLocal(messageKey, showCancel = false, onOk = null, onCancel = 
 
 // Function to add a card to the collection table
 async function addCardToCollection(cardData) {
-    const success = await firebaseAddCardToCollection(userId, cardData);
-    if (success) {
-        console.log("Card added to Firestore collection:", cardData.name);
-        
-        // Always refresh the first page to show the new card.
-        fetchAndRenderCollectionPage('first');
-        calculateAndDisplayTotalValue();
-    } else {
-        console.error("Error adding card to collection");
-    }
+    await collectionAddCardToCollection(cardData, userId,
+        () => {
+            // Always refresh the first page to show the new card.
+            fetchAndRenderCollectionPageLocal('first');
+            calculateAndDisplayTotalValueLocal();
+        },
+        (error) => console.error("Error adding card to collection:", error)
+    );
 }
 
-// Add a new row to the table
-function addRow(data, uniqueId) {
-    if (!data || !data.prices) {
-        console.error("Dati non validi per addRow:", data);
-        return;
-    }
-
-    const tableBody = document.querySelector('#resultsTable tbody');
-    const newRow = document.createElement('tr');
-    newRow.className = "border-t border-gray-200 transition-all duration-300 hover:bg-gray-100";
-    newRow.dataset.rowId = uniqueId;
-    newRow.id = uniqueId;
-    const index = tableBody.childElementCount;
-
-    const imageUrl = data.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
-    const colorSymbols = (data.colors && Array.isArray(data.colors)) ? data.colors.map(c => `<span class="color-symbol color-${c.toLowerCase()}"></span>`).join('') : (data.type_line && data.type_line.includes('Land') ? `<span class="color-symbol color-land"></span>` : `<span class="color-symbol color-c"></span>`);
-    
-    const setName = data.set_name || data.set.toUpperCase();
-    const setOptions = `<option value="${data.id}" selected>${setName}</option>`;
-
-    const cardNameIta = data.printed_name || data.name || 'N/A';
-    const cardNameEng = data.name || 'N/A';
-
-    newRow.innerHTML = `
-        <td class="py-2 px-4 border">${index + 1}</td>
-        <td class="py-2 px-4 border">
-            <img src="${imageUrl}" alt="${cardNameEng}" class="w-20 rounded-lg shadow-md card-img" onerror="this.onerror=null;this.src='https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';">
-        </td>
-        <td class="py-2 px-4 border text-ita-name">${cardNameIta}</td>
-        <td class="py-2 px-4 border text-eng-name">${cardNameEng}</td>
-        <td class="py-2 px-4 border color-cell">${colorSymbols}</td>
-        <td class="py-2 px-4 border">
-            <select class="p-1 border rounded-lg set-select">
-                ${setOptions}
-            </select>
-        </td>
-        <td class="py-2 px-4 border font-semibold price-eur">${data.prices.eur ? `${data.prices.eur} €` : "—"}</td>
-        <td class="py-2 px-4 border font-semibold price-usd">${data.prices.usd ? `${data.prices.usd} $` : "—"}</td>
-        <td class="py-2 px-4 border">
-            <button class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-1 px-3 rounded-full text-xs details-btn">${getTranslation('tableColDetails', activeLang)}</button>
-        </td>
-        <td class="py-2 px-4 border">
-            <button class="bg-red-500 hover:bg-red-600 text-white font-bold py-1 px-3 rounded-full text-xs remove-btn" data-lang-key="tableColAction">${getTranslation('tableColAction', activeLang)}</button>
-        </td>
-    `;
-    tableBody.appendChild(newRow);
-    
-    const selectElement = newRow.querySelector('.set-select');
-
-    selectElement.addEventListener('mousedown', async (e) => {
-        if (e.target.dataset.populated) return; 
-        e.target.dataset.populated = 'true'; 
-
-        e.target.innerHTML = `<option>${getTranslation('searchAddBtn-loading', activeLang)}</option>`;
-
-        const cardInCollection = searchResults.find(r => r.id === uniqueId);
-        if (cardInCollection && cardInCollection.result.oracle_id) {
-            const allPrints = await fetchAllPrintsByOracleId(cardInCollection.result.oracle_id);
-            if (allPrints.length > 0) {
-                const newSetOptions = allPrints.map(print => {
-                    const setObj = allSets.find(s => s.code === print.set.toLowerCase());
-                    const printSetName = setObj ? setObj.name : print.set.toUpperCase();
-                    return `<option value="${print.id}" ${data.id === print.id ? 'selected' : ''}>${printSetName}</option>`;
-                }).join('');
-                e.target.innerHTML = newSetOptions;
-            }
-        }
-    });
-
-    selectElement.addEventListener('change', async (e) => {
-        const selectedPrintId = e.target.value;
-        const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
-        
-        const printDataResponse = await fetchCardById(selectedPrintId);
-        if (printDataResponse && printDataResponse.object === 'card') {
-            const printToSave = { ...printDataResponse };
-            delete printToSave.cardPrints;
-            await setDoc(cardDocRef, printToSave);
-
-            // Manually update the row in the UI with the new data
-            const parentRow = e.target.closest('tr');
-            if (parentRow) {
-                const prices = printToSave.prices;
-                const imageUrl = printToSave.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
-
-                parentRow.querySelector('.price-eur').textContent = prices.eur ? `${prices.eur} €` : "—";
-                parentRow.querySelector('.price-usd').textContent = prices.usd ? `${prices.usd} $` : "—";
-                parentRow.querySelector('.card-img').src = imageUrl;
-                
-                // Also update the local searchResults array to keep it in sync
-                const resultIndex = searchResults.findIndex(r => r.id === uniqueId);
-                if (resultIndex > -1) {
-                    searchResults[resultIndex].result = printToSave;
-                }
-                 calculateAndDisplayTotalValue();
-            }
-        }
-    });
-
-    newRow.querySelector('.details-btn').addEventListener('click', () => {
-        const cardInCollection = searchResults.find(r => r.id === uniqueId);
-        if (cardInCollection) {
-            showCardDetailsModal(cardInCollection.result);
-        }
-    });
-    
-    newRow.querySelector('.remove-btn').addEventListener('click', async () => {
-        if (!db || !userId) return;
-
-        const cardInCollection = searchResults.find(r => r.id === uniqueId);
-        if (!cardInCollection) return;
-
-        const cardToDelete = cardInCollection.result;
-        const cardOracleId = cardToDelete.oracle_id;
-
-        // Find decks containing this card
-        const decksWithCard = decks.filter(deck => 
-            deck.cards && deck.cards.some(card => card.oracle_id === cardOracleId)
-        );
-
-        const deleteCardFromCollection = async () => {
-            const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
-            await deleteDoc(cardDocRef);
-            fetchAndRenderCollectionPage('current'); // Refresh current page
-            calculateAndDisplayTotalValue();
-        };
-
-        if (decksWithCard.length > 0) {
-            const deckNames = decksWithCard.map(d => d.name).join(', ');
-            
-            const modal = document.getElementById('customModal');
-            const modalMessage = document.getElementById('modalMessage');
-            const modalButtons = document.getElementById('modalButtons');
-            
-            const message = getTranslation('modalRemoveFromDecks', activeLang, { 'DECK_NAMES': deckNames });
-            modalMessage.textContent = message;
-
-            modalButtons.innerHTML = `
-                <button id="deleteOnlyFromCollectionBtn" class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${getTranslation('deleteOnlyFromCollectionBtn', activeLang)}</button>
-                <button id="deleteAllBtn" class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded-full transition-colors">${getTranslation('deleteAllBtn', activeLang)}</button>
-                <button id="cancelDeleteBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors">${getTranslation('cancelBtn', activeLang)}</button>
-            `;
-            
-            const restoreModalButtons = () => {
-                modalButtons.innerHTML = `
-                    <button id="modalOkBtn" class="bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2 px-4 rounded-full transition-colors" data-lang-key="okBtn">${getTranslation('okBtn', activeLang)}</button>
-                    <button id="modalCancelBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-2 px-4 rounded-full transition-colors hidden" data-lang-key="cancelBtn">${getTranslation('cancelBtn', activeLang)}</button>
-                `;
-            };
-
-            document.getElementById('deleteOnlyFromCollectionBtn').onclick = async () => {
-                await deleteCardFromCollection();
-                modal.classList.add('hidden');
-                restoreModalButtons();
-            };
-
-            document.getElementById('deleteAllBtn').onclick = async () => {
-                await deleteCardFromCollection();
-                await removeCardFromAllDecksByOracleIdLocal(cardOracleId);
-                modal.classList.add('hidden');
-                restoreModalButtons();
-            };
-
-            document.getElementById('cancelDeleteBtn').onclick = () => {
-                modal.classList.add('hidden');
-                restoreModalButtons();
-            };
-            
-            modal.classList.remove('hidden');
-
-        } else {
-            // Card is not in any deck, show the simple confirmation
-            showModal('modalRemoveCard', true, async () => {
-                await deleteCardFromCollection();
-            });
-        }
-    });
-}
-
-// Re-index the rows after a deletion
-function reindexRows() {
-  document.querySelectorAll('#resultsTable tbody tr').forEach((row, index) => {
-    const pageOffset = (currentPage - 1) * cardsPerPage;
-    row.querySelector('td:first-child').textContent = pageOffset + index + 1;
-  });
-}
-
-// Render the table based on the current filter and language
-function renderTable() {
-    const tableBody = document.querySelector('#resultsTable tbody');
-    tableBody.innerHTML = '';
-    
-    if (!Array.isArray(searchResults)) {
-        console.error("searchResults non è un array. Impossibile renderizzare la tabella.");
-        return;
-    }
-    
-    let pageResults = [...searchResults];
-
-    // Client-side COLOR filtering on the current page of results
-    const allChecked = document.getElementById('filter-all').checked;
-    if (!allChecked) {
-        pageResults = pageResults.filter(r => {
-            const cardColors = r.result.colors;
-            const typeLine = r.result.type_line;
-
-            const matchesMulti = activeFilters.includes('multi') && cardColors && cardColors.length > 1;
-            const matchesColorless = activeFilters.includes('incolor') && (!cardColors || cardColors.length === 0) && !(typeLine && typeLine.includes('Land'));
-            const matchesSpecificColor = activeFilters.some(filterColor => cardColors && cardColors.includes(filterColor));
-            const matchesLand = activeFilters.includes('incolor') && typeLine && typeLine.includes('Land');
-
-            return matchesMulti || matchesColorless || matchesSpecificColor || matchesLand;
-        });
-    }
-
-    pageResults.forEach(result => {
-        if (result && result.result) {
-            addRow(result.result, result.id);
-        }
-    });
-    reindexRows();
-
-    // Update visibility of name columns based on activeLang
-    const itaNameCells = document.querySelectorAll('.text-ita-name');
-    const engNameCells = document.querySelectorAll('.text-eng-name');
-    const itaHeader = document.querySelector('th[data-sort="ita-name"]');
-    const engHeader = document.querySelector('th[data-sort="eng-name"]');
-
-    if (activeLang === 'ita') {
-        itaNameCells.forEach(cell => cell.style.display = '');
-        engNameCells.forEach(cell => cell.style.display = 'none');
-        itaHeader.style.display = '';
-        engHeader.style.display = 'none';
-    } else {
-        itaNameCells.forEach(cell => cell.style.display = 'none');
-        engNameCells.forEach(cell => cell.style.display = '');
-        itaHeader.style.display = 'none';
-        engHeader.style.display = 'none';
-    }
-}
 
 // Helper to map sort column to firestore field name
 // getSortableField is now imported from searchFilter module
@@ -538,75 +324,48 @@ function buildLocalCollectionQuery() {
 }
 
 // Main function to fetch and render a page of the collection
-async function fetchAndRenderCollectionPage(direction = 'first') {
+async function fetchAndRenderCollectionPageLocal(direction = 'first') {
     if (!db) return;
-    document.getElementById("progress").classList.remove('hidden');
     
-    try {
-        const pageData = await fetchCollectionPage(userId, direction, cardsPerPage, pageFirstDocs, lastVisible);
-        
-        if (pageData.cards.length > 0) {
-            if (direction === 'next') {
-                currentPage++;
-                pageFirstDocs.push(pageData.firstVisible);
-            } else if (direction === 'prev') {
-                currentPage--;
-            }
-            firstVisible = pageData.firstVisible;
-            lastVisible = pageData.lastVisible;
+    const paginationState = {
+        currentPage,
+        pageFirstDocs,
+        lastVisible,
+        firstVisible
+    };
+    
+    const result = await collectionFetchAndRenderCollectionPage(
+        direction, userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, 
+        activeFilters, activeLang,
+        (cards) => {
+            searchResults = cards;
+        },
+        (error) => {
+            console.error("Error fetching collection page:", error);
+            alert("Errore nel caricare i dati. Potrebbe essere necessario creare un indice in Firestore per l'ordinamento richiesto. Controlla la console per il link per crearlo.");
         }
-        
-        searchResults = pageData.cards;
-        
-        renderTable(); 
-        updatePaginationUI(pageData.cards.length);
-
-    } catch (error) {
-        console.error("Error fetching collection page:", error);
-        alert("Errore nel caricare i dati. Potrebbe essere necessario creare un indice in Firestore per l'ordinamento richiesto. Controlla la console per il link per crearlo.");
-    } finally {
-        document.getElementById("progress").classList.add('hidden');
+    );
+    
+    if (result) {
+        currentPage = result.currentPage;
+        pageFirstDocs = result.pageFirstDocs;
+        lastVisible = result.lastVisible;
+        firstVisible = result.firstVisible;
     }
 }
 
-function updatePaginationUI(fetchedCount) {
-    const prevBtn = document.getElementById('prevPageBtn');
-    const nextBtn = document.getElementById('nextPageBtn');
-    const pageInfo = document.getElementById('pageInfo');
 
-    prevBtn.disabled = currentPage === 1;
-    nextBtn.disabled = fetchedCount < cardsPerPage; 
-
-    pageInfo.innerHTML = getTranslation('pageInfoText', activeLang, { '{currentPage}': currentPage });
-}
-
-async function calculateAndDisplayTotalValue() {
+async function calculateAndDisplayTotalValueLocal() {
     if (!db || !userId) return;
-
-    const totalEurEl = document.getElementById('totalEur');
-    const totalUsdEl = document.getElementById('totalUsd');
-    if (!totalEurEl || !totalUsdEl) return; 
-
-    const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
-    const querySnapshot = await getDocs(collectionRef);
-
-    let totalEur = 0;
-    let totalUsd = 0;
-
-    querySnapshot.forEach(doc => {
-        const card = doc.data();
-        if (card.prices) {
-            if (card.prices.eur) {
-                totalEur += parseFloat(card.prices.eur);
-            }
-            if (card.prices.usd) {
-                totalUsd += parseFloat(card.prices.usd);
-            }
+    
+    await collectionCalculateAndDisplayTotalValue(userId, appId, activeLang,
+        () => {
+            // Success callback - value calculation completed
+        },
+        (error) => {
+            console.error("Error calculating total value:", error);
         }
-    });
-
-    totalEurEl.textContent = `€${totalEur.toFixed(2)}`;
-    totalUsdEl.textContent = `$${totalUsd.toFixed(2)}`;
+    );
 }
 
 
@@ -697,7 +456,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
         if (resultsSection) {
             if (tabId === 'search-tab') {
                 resultsSection.classList.remove('hidden');
-                fetchAndRenderCollectionPage('first');
+                fetchAndRenderCollectionPageLocal('first');
             } else {
                 resultsSection.classList.add('hidden');
             }
@@ -803,18 +562,28 @@ document.getElementById('processCsv').addEventListener('click', async () => {
             
             if (name) {
                 if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} ${i + 1}/${lines.length}: "${name}"...`;
-                const result = await findCardWithAPI({ name, set });
-
-                if (result.strategy !== 'not-found' && result.strategy !== 'api-error') {
-                    const selectedPrint = result.cardPrints.find(p => p.id === result.selectedPrintId);
-                    if (selectedPrint) {
-                        addCardToCollection({ ...selectedPrint, cardPrints: result.cardPrints });
+                
+                // Use findCardAndHandleResults directly with callbacks for CSV processing
+                await findCardAndHandleResults(name, activeLang, 
+                    (card) => {
+                        // Single card found - add it directly
+                        addCardToCollection(card);
+                    },
+                    (cards) => {
+                        // Multiple cards found - take the first one for CSV processing
+                        if (cards && cards.length > 0) {
+                            addCardToCollection(cards[0]);
+                        }
+                    },
+                    (cardName) => {
+                        // Card not found - just log and continue
+                        console.log(`Card not found during CSV processing: ${cardName}`);
                     }
-                }
+                );
             }
         }
         if (progress) progress.classList.add('hidden');
-        fetchAndRenderCollectionPage('first');
+        fetchAndRenderCollectionPageLocal('first');
         showModal('modalCsvComplete');
         processCsvBtn.disabled = false;
         processCsvBtn.textContent = getTranslation('processCsvBtn-completed', activeLang);
@@ -881,8 +650,8 @@ document.getElementById('loadJsonFile').addEventListener('change', (e) => {
                 console.log("New cards added from JSON.");
 
                 showModal('modalCardsLoaded', false, null, null, { 'CARD_COUNT': data.length });
-                fetchAndRenderCollectionPage('first');
-                calculateAndDisplayTotalValue();
+                fetchAndRenderCollectionPageLocal('first');
+                calculateAndDisplayTotalValueLocal();
             } else {
                 showModal('modalInvalidJson');
             }
@@ -975,7 +744,7 @@ document.querySelectorAll('#resultsTable .sortable').forEach(header => {
     icon.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
 
     currentSort = { column, direction };
-    fetchAndRenderCollectionPage('first');
+    fetchAndRenderCollectionPageLocal('first');
   });
 });
 
@@ -1012,8 +781,8 @@ document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(
             }
         }
         
-        // When filtering, we re-render the current page of data client-side
-        renderTable();
+        // When filtering, re-fetch the current page with new filters
+        fetchAndRenderCollectionPageLocal('current');
     });
 });
 
@@ -1036,40 +805,8 @@ async function updateDeck(deckId, data) {
     await firebaseUpdateDeck(userId, deckId, data);
 }
 
-function renderDecksList() {
-    const decksContainer = document.getElementById('decks-container');
-    decksContainer.innerHTML = '';
-    decks.forEach(deck => {
-        const deckCard = document.createElement('div');
-        deckCard.className = 'bg-gray-100 p-4 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer relative group';
-        deckCard.innerHTML = `
-            <div class="flex items-center justify-between">
-                <h3 class="font-bold text-gray-900">${deck.name}</h3>
-                <button class="delete-deck-btn text-red-500 hover:text-red-700 p-1" data-deck-id="${deck.id}">
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
-                       <path fill-rule="evenodd" d="M5.47 5.47a.75.75 0 011.06 0L12 10.94l5.47-5.47a.75.75 0 111.06 1.06L13.06 12l5.47 5.47a.75.75 0 11-1.06 1.06L12 13.06l-5.47 5.47a.75.75 0 01-1.06-1.06L10.94 12 5.47 6.53a.75.75 0 010-1.06z" clip-rule="evenodd" />
-                    </svg>
-                </button>
-            </div>
-            <p class="text-sm text-gray-600">${deck.cards ? deck.cards.length : 0} carte</p>
-        `;
-        deckCard.addEventListener('click', (e) => {
-            if (!e.target.closest('.delete-deck-btn')) {
-                enterDeckEditor(deck.id);
-            }
-        });
-        deckCard.querySelector('.delete-deck-btn').addEventListener('click', (e) => {
-             showModal('modalRemoveCard', true, async () => {
-                if (!db || !userId) return;
-                const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deck.id);
-                await deleteDoc(deckDocRef);
-             });
-        });
-        decksContainer.appendChild(deckCard);
-    });
-}
 
-function enterDeckEditor(deckId) {
+async function enterDeckEditor(deckId) {
     currentDeckId = deckId;
     currentDeck = decks.find(d => d.id === deckId);
     if (!currentDeck) {
@@ -1084,77 +821,28 @@ function enterDeckEditor(deckId) {
         await updateDeck(currentDeckId, { name: e.target.value });
     });
 
-    renderDeckCards();
-    renderCollectionCards();
-}
-
-function renderDeckCards() {
-    const deckListContainer = document.getElementById('deck-list-container');
-    deckListContainer.innerHTML = '';
-    (currentDeck.cards || []).forEach(card => {
-        const cardItem = document.createElement('div');
-        cardItem.className = 'flex items-center justify-between p-2 bg-gray-200 rounded-lg';
-        const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
-        const imageUrl = card.image_uris?.art_crop || `https://placehold.co/60x44/E5E7EB/9CA3AF?text=N/A`;
-
-        cardItem.innerHTML = `
-            <div class="flex items-center gap-3">
-                <img src="${imageUrl}" alt="${cardName}" class="w-16 rounded-md">
-                <span class="font-semibold">${cardName}</span>
-            </div>
-            <button class="remove-from-deck-btn bg-red-500 hover:bg-red-600 text-white text-xs px-2 py-1 rounded-full" data-card-id="${card.id}">${getTranslation('removeBtn', activeLang)}</button>
-        `;
-        cardItem.querySelector('.remove-from-deck-btn').addEventListener('click', async () => {
-            removeCardFromDeck(card.id);
-        });
-        deckListContainer.appendChild(cardItem);
+    renderDeckCards(currentDeck, activeLang, async (cardId) => {
+        await firebaseRemoveCardFromDeck(userId, currentDeckId, cardId, currentDeck.cards || []);
     });
-}
-
-async function renderCollectionCards() {
-    const collectionCardsGrid = document.getElementById('collection-cards-grid');
+    
+    // For renderCollectionCards, we need to get the collection data first
     const collectionSearchInput = document.getElementById('collectionSearchInput');
     const searchTerm = collectionSearchInput.value.toLowerCase();
-    collectionCardsGrid.innerHTML = '';
-    
-    // In deck editor, we still show the whole (unpaginated) collection for now for simplicity.
-    // A future improvement could be paginating this view as well.
     const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`), orderBy('name')));
     const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
-
     const filteredCollection = fullCollection.filter(card => {
         const cardName = card.result.printed_name || card.result.name;
         return cardName.toLowerCase().includes(searchTerm);
     });
     
-    filteredCollection.forEach(card => {
-        const cardElement = document.createElement('div');
-        cardElement.className = 'collection-card-tile p-2 bg-gray-100 rounded-lg shadow-sm hover:shadow-md transition-shadow cursor-pointer';
-        const imageUrl = card.result.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
-        const cardName = activeLang === 'ita' ? (card.result.printed_name || card.result.name) : card.result.name;
-        
-        cardElement.innerHTML = `
-            <img src="${imageUrl}" alt="${cardName}" class="w-full rounded-lg mb-2">
-            <p class="text-sm text-center font-semibold text-gray-800">${cardName}</p>
-        `;
-        cardElement.addEventListener('click', () => {
-            addCardToDeck(card.result);
-        });
-        collectionCardsGrid.appendChild(cardElement);
+    renderCollectionCards(filteredCollection, searchTerm, activeLang, async (cardData) => {
+        await firebaseAddCardToDeck(userId, currentDeckId, cardData, currentDeck.cards || []);
     });
 }
 
-async function addCardToDeck(cardData) {
-    if (currentDeckId && db && userId) {
-        await firebaseAddCardToDeck(userId, currentDeckId, cardData, currentDeck.cards || []);
-    }
-}
 
-async function removeCardFromDeck(cardId) {
-    if (currentDeckId && db && userId) {
-        await firebaseRemoveCardFromDeck(userId, currentDeckId, cardId, currentDeck.cards || []);
-    }
-}
+
+
 
 async function removeCardFromAllDecksByOracleIdLocal(oracleId) {
     const updatedDecksCount = await removeCardFromAllDecksByOracleId(userId, oracleId);
@@ -1176,24 +864,40 @@ document.getElementById('backToDecksBtn').addEventListener('click', () => {
     currentDeckId = null;
     document.getElementById('decks-list').classList.remove('hidden');
     document.getElementById('deck-editor').classList.add('hidden');
-    renderDecksList(); // Rerender the list to show the updated card counts
+    renderDecksList(decks, (deckId) => enterDeckEditor(deckId), 
+        (deckId) => showModalLocal('modalRemoveCard', true, async () => {
+            const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
+            await deleteDoc(deckDocRef);
+        }), activeLang); // Rerender the list to show the updated card counts
 });
 
-document.getElementById('collectionSearchInput').addEventListener('input', () => {
-    renderCollectionCards();
+document.getElementById('collectionSearchInput').addEventListener('input', async () => {
+    // Re-render collection cards with new search term
+    const collectionSearchInput = document.getElementById('collectionSearchInput');
+    const searchTerm = collectionSearchInput.value.toLowerCase();
+    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`), orderBy('name')));
+    const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
+    const filteredCollection = fullCollection.filter(card => {
+        const cardName = card.result.printed_name || card.result.name;
+        return cardName.toLowerCase().includes(searchTerm);
+    });
+    
+    renderCollectionCards(filteredCollection, searchTerm, activeLang, async (cardData) => {
+        await firebaseAddCardToDeck(userId, currentDeckId, cardData, currentDeck.cards || []);
+    });
 });
 
 // Pagination event listeners
-document.getElementById('nextPageBtn').addEventListener('click', () => fetchAndRenderCollectionPage('next'));
-document.getElementById('prevPageBtn').addEventListener('click', () => fetchAndRenderCollectionPage('prev'));
+document.getElementById('nextPageBtn').addEventListener('click', () => fetchAndRenderCollectionPageLocal('next'));
+document.getElementById('prevPageBtn').addEventListener('click', () => fetchAndRenderCollectionPageLocal('prev'));
 document.getElementById('pageSizeSelect').addEventListener('change', (e) => {
     cardsPerPage = parseInt(e.target.value, 10);
-    fetchAndRenderCollectionPage('first');
+    fetchAndRenderCollectionPageLocal('first');
 });
 
 // Collection filter event listener
 document.getElementById('collectionSearchBtn').addEventListener('click', () => {
-    fetchAndRenderCollectionPage('first');
+    fetchAndRenderCollectionPageLocal('first');
 });
 
 document.getElementById('collectionFilterInput').addEventListener('keydown', (event) => {
@@ -1205,7 +909,7 @@ document.getElementById('collectionFilterInput').addEventListener('keydown', (ev
 
 document.getElementById('collectionResetBtn').addEventListener('click', () => {
     document.getElementById('collectionFilterInput').value = '';
-    fetchAndRenderCollectionPage('first');
+    fetchAndRenderCollectionPageLocal('first');
 });
 
 
@@ -1235,7 +939,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
         if (resultsSection) {
             if (tabId === 'search-tab') {
                 resultsSection.classList.remove('hidden');
-                fetchAndRenderCollectionPage('first');
+                fetchAndRenderCollectionPageLocal('first');
             } else {
                 resultsSection.classList.add('hidden');
             }
