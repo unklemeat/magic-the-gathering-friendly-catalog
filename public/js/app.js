@@ -31,6 +31,25 @@ import {
   getFirebaseInstances,
   isFirebaseInitialized
 } from './modules/firebase.js';
+import {
+  updateUI,
+  updateApiStatus,
+  showSearchResultsModal,
+  showCardDetailsModal,
+  showModal,
+  addRow,
+  reindexRows,
+  renderTable,
+  updatePaginationUI,
+  calculateAndDisplayTotalValue,
+  renderDecksList,
+  enterDeckEditor,
+  renderDeckCards,
+  renderCollectionCards,
+  toggleProgress,
+  updateProgressText,
+  setActiveTab
+} from './modules/ui.js';
 
 
 let allSets = [];
@@ -127,22 +146,9 @@ if (firebaseInstances) {
 // Translations are now imported from the translations module
 
 // Function to translate the UI based on the selected language
-function updateUI(lang) {
-    document.querySelectorAll('[data-lang-key]').forEach(element => {
-        const key = element.dataset.langKey;
-        element.innerHTML = getTranslation(key, lang);
-    });
-
-    document.querySelectorAll('[data-lang-placeholder]').forEach(element => {
-        const key = element.dataset.langPlaceholder;
-        element.placeholder = getTranslation(key, lang);
-    });
-
-    document.querySelectorAll('[data-lang-title]').forEach(element => {
-        const key = element.dataset.langTitle;
-        element.title = getTranslation(key, lang);
-    });
-    updatePaginationUI(searchResults.length);
+function updateUILocal(lang) {
+    updateUI(lang);
+    updatePaginationUI(searchResults.length, currentPage, activeLang);
 }
 
 // Table sorting variables
@@ -153,40 +159,24 @@ let apiStatus = 'connecting';
 
 
 // Function to update the visual API status
-function updateApiStatus(status, messageKey) {
-    const statusIcon = document.getElementById('statusIcon');
-    const statusBtn = document.getElementById('statusBtn');
-    
-    // Check if the elements exist before trying to update them
-    if (statusIcon) {
-        if (status === 'ready') {
-            statusIcon.className = 'w-3 h-3 rounded-full bg-emerald-500';
-        } else if (status === 'error') {
-            statusIcon.className = 'w-3 h-3 rounded-full bg-red-500';
-        } else { // connecting
-            statusIcon.className = 'w-3 h-3 rounded-full bg-yellow-500 animate-pulse';
-        }
-    }
-
-    if (statusBtn) {
-        statusBtn.textContent = getTranslation('apiStatusBtn', activeLang);
-    }
+function updateApiStatusLocal(status, messageKey) {
+    updateApiStatus(status, messageKey, activeLang);
 }
 
 // Fetch all sets from Scryfall on app startup
 async function loadSets() {
-  updateApiStatus('connecting', 'apiStatusConnecting');
+  updateApiStatusLocal('connecting', 'apiStatusConnecting');
   try {
     allSets = await fetchSets();
     if (allSets.length > 0) {
-      updateApiStatus('ready', 'apiStatusReady');
+      updateApiStatusLocal('ready', 'apiStatusReady');
       populateSetSelect();
     } else {
-      updateApiStatus('error', 'apiStatusError');
+      updateApiStatusLocal('error', 'apiStatusError');
     }
   } catch (error) {
     console.error("Sets loading error:", error);
-    updateApiStatus('error', 'apiStatusError');
+    updateApiStatusLocal('error', 'apiStatusError');
   }
 }
 
@@ -228,13 +218,13 @@ async function fetchAndRenderSetCards(setCode) {
                 `;
                 cardElement.addEventListener('click', () => {
                     currentCardDetails = card;
-                    showCardDetailsModal(card);
+                    showCardDetailsModalLocal(card);
                 });
                 cardsContainer.appendChild(cardElement);
             });
     } catch (error) {
         console.error("Error fetching set cards:", error);
-        showModal('modalApiError');
+        showModalLocal('modalApiError');
     } finally {
         document.getElementById("progress").classList.add('hidden');
     }
@@ -259,7 +249,7 @@ async function findCardAndHandleResults(cardName) {
             addCardToCollection({ ...card, cardPrints: allPrints });
             return;
         } else if (exactMatches.length > 1) {
-            showSearchResultsModal(exactMatches);
+                        showSearchResultsModalLocal(exactMatches);
             return;
         }
     }
@@ -271,109 +261,31 @@ async function findCardAndHandleResults(cardName) {
       const allPrints = await fetchAllPrintsByOracleId(namedResult.oracle_id);
       
       if (allPrints.length > 0) {
-        showSearchResultsModal(allPrints);
+                    showSearchResultsModalLocal(allPrints);
         return;
       }
     }
     
-    showModal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` });
+    showModalLocal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` });
 }
 
-function showSearchResultsModal(cards) {
-    const modal = document.getElementById('cardSelectionModal');
-    const grid = document.getElementById('cardSelectionGrid');
-    grid.innerHTML = '';
-
-    cards.forEach(card => {
-        const cardElement = document.createElement('div');
-        cardElement.className = 'cursor-pointer p-2 bg-gray-200 rounded-lg shadow-md hover:bg-gray-300 transition-colors';
-        const imageUrl = card.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
-        const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
-        cardElement.innerHTML = `
-            <img src="${imageUrl}" alt="${cardName}" class="w-full rounded-lg mb-2">
-            <p class="text-sm text-center font-semibold">${cardName}</p>
-        `;
-        cardElement.addEventListener('click', async () => {
-            const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
-            addCardToCollection({ ...card, cardPrints: allPrints });
-            modal.classList.add('hidden');
-        });
-        grid.appendChild(cardElement);
+function showSearchResultsModalLocal(cards) {
+    showSearchResultsModal(cards, async (card) => {
+        const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
+        addCardToCollection({ ...card, cardPrints: allPrints });
     });
-
-    modal.classList.remove('hidden');
 }
 
 // Show the card details modal
-function showCardDetailsModal(card) {
-    const modal = document.getElementById('cardDetailsModal');
-    const cardImageContainer = document.getElementById('cardImageContainer');
-    const cardNameInModal = document.getElementById('cardNameInModal');
-    const cardDescriptionInModal = document.getElementById('cardDescriptionInModal');
-    const addToCollectionBtn = document.getElementById('addToCollectionBtn');
-
-    cardImageContainer.innerHTML = '';
-    
-    // Check for "transform" property which indicates a double-sided card
-    if (card.card_faces) {
-        card.card_faces.forEach(face => {
-            if (face.image_uris && face.image_uris.large) {
-                const img = document.createElement('img');
-                img.src = face.image_uris.large;
-                img.alt = face.name;
-                img.className = "w-full rounded-lg shadow-lg";
-                cardImageContainer.appendChild(img);
-            }
-        });
-    } else if (card.image_uris && card.image_uris.large) {
-        const img = document.createElement('img');
-        img.src = card.image_uris.large;
-        img.alt = card.name;
-        img.className = "w-full rounded-lg shadow-lg";
-        cardImageContainer.appendChild(img);
-    } else {
-        const noImageText = getTranslation('modalNoImage', activeLang);
-        cardImageContainer.innerHTML = `<div class="text-gray-400 text-center">${noImageText}</div>`;
-    }
-
-    const cardName = activeLang === 'ita' ? (card.printed_name || card.name) : card.name;
-    cardNameInModal.textContent = cardName;
-    const descText = card.oracle_text || getTranslation('modalNoOracleText', activeLang);
-    cardDescriptionInModal.textContent = descText;
-
-    // Set a data attribute on the button to store the card data
-    addToCollectionBtn.onclick = async () => {
+function showCardDetailsModalLocal(card) {
+    showCardDetailsModal(card, (card) => {
         addCardToCollection(card);
-        modal.classList.add('hidden');
-    };
-    
-    modal.classList.remove('hidden');
+    });
 }
 
 // Show a generic modal with a custom message
-function showModal(messageKey, showCancel = false, onOk = null, onCancel = null, replacements = {}) {
-    const modal = document.getElementById('customModal');
-    const modalMessage = document.getElementById('modalMessage');
-    const modalOkBtn = document.getElementById('modalOkBtn');
-    const modalCancelBtn = document.getElementById('modalCancelBtn');
-
-    let message = getTranslation(messageKey, activeLang);
-    for (const [key, value] of Object.entries(replacements)) {
-      message = message.replace(key, value);
-    }
-    modalMessage.textContent = message;
-    modalCancelBtn.classList.toggle('hidden', !showCancel);
-
-    modal.classList.remove('hidden');
-
-    modalOkBtn.onclick = () => {
-        modal.classList.add('hidden');
-        if (onOk) onOk();
-    };
-    modalCancelBtn.onclick = () => {
-        modal.classList.add('hidden');
-        if (onCancel) onCancel();
-    };
+function showModalLocal(messageKey, showCancel = false, onOk = null, onCancel = null, replacements = {}) {
+    showModal(messageKey, showCancel, onOk, onCancel, replacements, activeLang);
 }
 
 // Function to add a card to the collection table
