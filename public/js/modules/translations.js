@@ -211,19 +211,3 @@ export function getTranslation(key, lang = 'ita', replacements = {}) {
   return result;
 }
 
-/**
- * Get all available languages
- * @returns {string[]} Array of language codes
- */
-export function getAvailableLanguages() {
-  return Object.keys(translations);
-}
-
-/**
- * Check if a language is supported
- * @param {string} lang - The language code to check
- * @returns {boolean} True if the language is supported
- */
-export function isLanguageSupported(lang) {
-  return lang in translations;
-}

@@ -5,7 +5,7 @@
 // Since we're testing browser modules, we need to mock the module system
 // For now, we'll test the functions directly by importing them
 
-const { getTranslation, getAvailableLanguages, isLanguageSupported } = require('../public/js/modules/translations.js');
+const { getTranslation } = require('../public/js/modules/translations.js');
 
 describe('Translations Module', () => {
   
@@ -39,28 +39,6 @@ describe('Translations Module', () => {
     });
   });
 
-  describe('getAvailableLanguages', () => {
-    test('should return array of available languages', () => {
-      const languages = getAvailableLanguages();
-      expect(Array.isArray(languages)).toBe(true);
-      expect(languages).toContain('ita');
-      expect(languages).toContain('eng');
-      expect(languages.length).toBe(2);
-    });
-  });
-
-  describe('isLanguageSupported', () => {
-    test('should return true for supported languages', () => {
-      expect(isLanguageSupported('ita')).toBe(true);
-      expect(isLanguageSupported('eng')).toBe(true);
-    });
-
-    test('should return false for unsupported languages', () => {
-      expect(isLanguageSupported('fr')).toBe(false);
-      expect(isLanguageSupported('es')).toBe(false);
-      expect(isLanguageSupported('')).toBe(false);
-    });
-  });
 
   describe('Translation completeness', () => {
     test('should have same keys in both languages', () => {
