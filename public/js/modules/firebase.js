@@ -472,3 +472,20 @@ export function getFirebaseInstances() {
 export function isFirebaseInitialized() {
   return !!(app && db && auth);
 }
+
+// Re-export Firestore functions for use in other modules
+export { 
+  doc, 
+  collection, 
+  addDoc, 
+  setDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  getDocs, 
+  limit, 
+  startAfter, 
+  orderBy, 
+  where,
+  onSnapshot
+};

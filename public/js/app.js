@@ -29,7 +29,6 @@ import {
   showCardDetailsModal,
   showModal,
   renderDecksList,
-  enterDeckEditor,
   renderDeckCards,
   renderCollectionCards
 } from './modules/ui.js';
@@ -681,46 +680,42 @@ const eventHandlers = {
 };
 
 // =================================================================================================
-// --- EVENT LISTENER SETUP ---
-// =================================================================================================
-// Voice search setup (kept here since it's initialization logic)
-const voiceSearchBtn = document.getElementById('voiceSearchBtn');
-const cardNameInput = document.getElementById('cardNameInput');
-const micIcon = document.getElementById('mic-icon');
-const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
-
-const startVoiceSearch = setupVoiceSearch(
-    (transcript) => {
-        if (transcript) {
-            cardNameInput.value = capitalizeWords(transcript);
-        } else {
-            cardNameInput.value = '';
-        }
-        document.getElementById('searchCardBtn').click();
-    },
-    (errorKey) => {
-        showModalLocal(errorKey);
-    }
-);
-
-if (!startVoiceSearch) {
-    if (voiceSearchBtn) {
-        voiceSearchBtn.disabled = true;
-    }
-    if (micUnsupportedIcon) {
-        micUnsupportedIcon.classList.remove('hidden');
-    }
-    console.warn("Your browser does not support the Web Speech API.");
-}
-
-// Initialize event listeners
-setupEventListeners(eventHandlers);
-
-
-// =================================================================================================
 // --- APP START ---
 // =================================================================================================
 window.onload = () => {
+  // Initialize event listeners after DOM is ready
+  setupEventListeners(eventHandlers);
+  
+  // Voice search setup (after DOM is ready)
+  const voiceSearchBtn = document.getElementById('voiceSearchBtn');
+  const cardNameInput = document.getElementById('cardNameInput');
+  const micIcon = document.getElementById('mic-icon');
+  const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
+
+  const startVoiceSearch = setupVoiceSearch(
+      (transcript) => {
+          if (transcript) {
+              cardNameInput.value = capitalizeWords(transcript);
+          } else {
+              cardNameInput.value = '';
+          }
+          document.getElementById('searchCardBtn').click();
+      },
+      (errorKey) => {
+          showModalLocal(errorKey);
+      }
+  );
+
+  if (!startVoiceSearch) {
+      if (voiceSearchBtn) {
+          voiceSearchBtn.disabled = true;
+      }
+      if (micUnsupportedIcon) {
+          micUnsupportedIcon.classList.remove('hidden');
+      }
+      console.warn("Your browser does not support the Web Speech API.");
+  }
+  
   loadSets();
   updateUI(state.activeLang);
 };
