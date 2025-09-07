@@ -121,17 +121,39 @@ if (firebaseInstances) {
     console.error("Configurazione Firebase mancante! Inseriscila in 'localFirebaseConfig' per l'esecuzione locale.");
 }
 
-// Table sorting variables
-let currentSort = { column: null, direction: 'asc' };
 
-// API status variable
-let apiStatus = 'connecting';
-
+// =================================================================================================
+// --- MODAL & UI WRAPPERS ---
+// =================================================================================================
 
 // Function to update the visual API status
 function updateApiStatusLocal(status, messageKey) {
     updateApiStatus(status, messageKey, state.activeLang);
 }
+
+function showSearchResultsModalLocal(cards) {
+    showSearchResultsModal(cards, async (card) => {
+        const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
+        addCardToCollection({ ...card, cardPrints: allPrints });
+    });
+}
+
+// Show the card details modal
+function showCardDetailsModalLocal(card) {
+    showCardDetailsModal(card, (card) => {
+        addCardToCollection(card);
+    });
+}
+
+// Show a generic modal with a custom message
+function showModalLocal(messageKey, showCancel = false, onOk = null, onCancel = null, replacements = {}) {
+    showModal(messageKey, showCancel, onOk, onCancel, replacements, state.activeLang);
+}
+
+
+// =================================================================================================
+// --- DATA FETCHING & RENDERING WRAPPERS ---
+// =================================================================================================
 
 // Fetch all sets from Scryfall on app startup
 async function loadSets() {
@@ -194,39 +216,6 @@ async function fetchAndRenderSetCards(setCode) {
     }
 }
 
-
-function showSearchResultsModalLocal(cards) {
-    showSearchResultsModal(cards, async (card) => {
-        const allPrints = await fetchAllPrintsByOracleId(card.oracle_id);
-        addCardToCollection({ ...card, cardPrints: allPrints });
-    });
-}
-
-// Show the card details modal
-function showCardDetailsModalLocal(card) {
-    showCardDetailsModal(card, (card) => {
-        addCardToCollection(card);
-    });
-}
-
-// Show a generic modal with a custom message
-function showModalLocal(messageKey, showCancel = false, onOk = null, onCancel = null, replacements = {}) {
-    showModal(messageKey, showCancel, onOk, onCancel, replacements, state.activeLang);
-}
-
-// Function to add a card to the collection table
-async function addCardToCollection(cardData) {
-    await collectionAddCardToCollection(cardData, state.userId,
-        () => {
-            // Always refresh the first page to show the new card.
-            fetchAndRenderCollectionPageLocal('first');
-            calculateAndDisplayTotalValueLocal();
-        },
-        (error) => console.error("Error adding card to collection:", error)
-    );
-}
-
-
 // Main function to fetch and render a page of the collection
 async function fetchAndRenderCollectionPageLocal(direction = 'first') {
     if (!state.db) return;
@@ -251,7 +240,7 @@ async function fetchAndRenderCollectionPageLocal(direction = 'first') {
             console.error("Error fetching collection page:", error);
             alert("Errore nel caricare i dati. Potrebbe essere necessario creare un indice in Firestore per l'ordinamento richiesto. Controlla la console per il link per crearlo.");
         },
-        appId, state.decks, state.searchResults, searchTerm, state.currentSort.column, state.currentSort.direction
+        appId, state.decks, state.searchResults, state.currentSort.column, state.currentSort.direction
     );
     
     if (result) {
@@ -261,7 +250,6 @@ async function fetchAndRenderCollectionPageLocal(direction = 'first') {
         state.setFirstVisible(result.firstVisible);
     }
 }
-
 
 async function calculateAndDisplayTotalValueLocal() {
     if (!state.db || !state.userId) return;
@@ -276,6 +264,120 @@ async function calculateAndDisplayTotalValueLocal() {
     );
 }
 
+
+// =================================================================================================
+// --- HIGH-LEVEL LOGIC / USER ACTIONS ---
+// =================================================================================================
+
+// Function to add a card to the collection table
+async function addCardToCollection(cardData) {
+    await collectionAddCardToCollection(cardData, state.userId,
+        () => {
+            // Always refresh the first page to show the new card.
+            fetchAndRenderCollectionPageLocal('first');
+            calculateAndDisplayTotalValueLocal();
+        },
+        (error) => console.error("Error adding card to collection:", error)
+    );
+}
+
+async function handleSearch() {
+    const cardNameInput = document.getElementById('cardNameInput');
+    const cardName = cardNameInput.value;
+    
+    // Validate input using the proper validation function
+    const validation = validateSearchInput(cardName);
+    if (!validation.isValid) {
+        showModalLocal(validation.message);
+        return;
+    }
+    
+    await handleSearchWithUI(
+        cardName,
+        state.activeLang,
+        // onSearchStart callback
+        (cardName) => {
+            const searchCardBtn = document.getElementById('searchCardBtn');
+            const progress = document.getElementById("progress");
+            const progressText = document.getElementById("progressText");
+            
+            // Disable the button and show progress
+            searchCardBtn.disabled = true;
+            searchCardBtn.textContent = getTranslation('searchAddBtn-loading', state.activeLang);
+            if (progress) progress.classList.remove('hidden');
+            if (progressText) progressText.textContent = `${getTranslation('processing', state.activeLang)} "${cardName}"...`;
+        },
+        // onSearchComplete callback
+        () => {
+            const searchCardBtn = document.getElementById('searchCardBtn');
+            const progress = document.getElementById("progress");
+            
+            // Re-enable the button and hide progress
+            searchCardBtn.disabled = false;
+            searchCardBtn.textContent = getTranslation('searchAddBtn-completed', state.activeLang);
+            if (progress) progress.classList.add('hidden');
+            
+            // Clear input
+            cardNameInput.value = '';
+        },
+        // onCardFound callback
+        (card) => addCardToCollection(card),
+        // onMultipleCardsFound callback
+        (cards) => showSearchResultsModalLocal(cards),
+        // onCardNotFound callback
+        (cardName) => showModalLocal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` }),
+        // onError callback
+        (errorKey) => showModalLocal(errorKey)
+    );
+}
+
+// Deck Builder Logic
+async function addDeck(name) {
+    await firebaseAddDeck(state.userId, name);
+}
+
+async function updateDeck(deckId, data) {
+    await firebaseUpdateDeck(state.userId, deckId, data);
+}
+
+async function enterDeckEditor(deckId) {
+    state.setCurrentDeckId(deckId);
+    state.setCurrentDeck(state.decks.find(d => d.id === deckId));
+    if (!state.currentDeck) {
+        return;
+    }
+    document.getElementById('decks-list').classList.add('hidden');
+    document.getElementById('deck-editor').classList.remove('hidden');
+    
+    const deckEditorNameInput = document.getElementById('deck-editor-name-input');
+    deckEditorNameInput.value = state.currentDeck.name;
+    deckEditorNameInput.addEventListener('change', async (e) => {
+        await updateDeck(state.currentDeckId, { name: e.target.value });
+    });
+
+    renderDeckCards(state.currentDeck, state.activeLang, async (cardId) => {
+        await firebaseRemoveCardFromDeck(state.userId, state.currentDeckId, cardId, state.currentDeck.cards || []);
+    });
+    
+    // For renderCollectionCards, we need to get the collection data first
+    const collectionSearchInput = document.getElementById('collectionSearchInput');
+    const searchTerm = collectionSearchInput.value.toLowerCase();
+    const collectionSnapshot = await getDocs(query(collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`), orderBy('name')));
+    const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
+    const filteredCollection = fullCollection.filter(card => {
+        const cardName = card.result.printed_name || card.result.name;
+        return cardName.toLowerCase().includes(searchTerm);
+    });
+    
+    renderCollectionCards(filteredCollection, searchTerm, state.activeLang, async (cardData) => {
+        await firebaseAddCardToDeck(state.userId, state.currentDeckId, cardData, state.currentDeck.cards || []);
+    });
+}
+
+
+// =================================================================================================
+// --- EVENT HANDLERS ---
+// =================================================================================================
 // Event handlers object for the events module
 const eventHandlers = {
     onTabChange: (tabId) => {
@@ -578,6 +680,9 @@ const eventHandlers = {
     }
 };
 
+// =================================================================================================
+// --- EVENT LISTENER SETUP ---
+// =================================================================================================
 // Voice search setup (kept here since it's initialization logic)
 const voiceSearchBtn = document.getElementById('voiceSearchBtn');
 const cardNameInput = document.getElementById('cardNameInput');
@@ -611,208 +716,10 @@ if (!startVoiceSearch) {
 // Initialize event listeners
 setupEventListeners(eventHandlers);
 
-async function handleSearch() {
-    const cardNameInput = document.getElementById('cardNameInput');
-    const cardName = cardNameInput.value;
-    
-    // Validate input using the proper validation function
-    const validation = validateSearchInput(cardName);
-    if (!validation.isValid) {
-        showModalLocal(validation.message);
-        return;
-    }
-    
-    await handleSearchWithUI(
-        cardName,
-        state.activeLang,
-        // onSearchStart callback
-        (cardName) => {
-            const searchCardBtn = document.getElementById('searchCardBtn');
-            const progress = document.getElementById("progress");
-            const progressText = document.getElementById("progressText");
-            
-            // Disable the button and show progress
-            searchCardBtn.disabled = true;
-            searchCardBtn.textContent = getTranslation('searchAddBtn-loading', state.activeLang);
-            if (progress) progress.classList.remove('hidden');
-            if (progressText) progressText.textContent = `${getTranslation('processing', state.activeLang)} "${cardName}"...`;
-        },
-        // onSearchComplete callback
-        () => {
-            const searchCardBtn = document.getElementById('searchCardBtn');
-            const progress = document.getElementById("progress");
-            
-            // Re-enable the button and hide progress
-            searchCardBtn.disabled = false;
-            searchCardBtn.textContent = getTranslation('searchAddBtn-completed', state.activeLang);
-            if (progress) progress.classList.add('hidden');
-            
-            // Clear input
-            cardNameInput.value = '';
-        },
-        // onCardFound callback
-        (card) => addCardToCollection(card),
-        // onMultipleCardsFound callback
-        (cards) => showSearchResultsModalLocal(cards),
-        // onCardNotFound callback
-        (cardName) => showModalLocal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` }),
-        // onError callback
-        (errorKey) => showModalLocal(errorKey)
-    );
-}
 
-// CSV file upload logic moved to eventHandlers.onProcessCsv
-async function processCsvOld() {
-    const file = document.getElementById('csvFile').files[0];
-    const processCsvBtn = document.getElementById('processCsv');
-    if (!file) {
-        showModal('modalNoCardName');
-        return;
-    }
-
-    processCsvBtn.disabled = true;
-    processCsvBtn.textContent = getTranslation('processCsvBtn-loading', state.activeLang);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-        const text = e.target.result;
-        const lines = text.split('\n').map(line => line.trim()).filter(line => line.length > 0);
-        
-        const progress = document.getElementById("progress");
-        const progressText = document.getElementById("progressText");
-        if (progress) progress.classList.remove('hidden');
-        
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
-            const [name, set] = line.split(';').map(s => s.trim());
-            
-            if (name) {
-                if (progressText) progressText.textContent = `${getTranslation('processing', state.activeLang)} ${i + 1}/${lines.length}: "${name}"...`;
-                
-                // Use findCardAndHandleResults directly with callbacks for CSV processing
-                await findCardAndHandleResults(name, state.activeLang, 
-                    (card) => {
-                        // Single card found - add it directly
-                        addCardToCollection(card);
-                    },
-                    (cards) => {
-                        // Multiple cards found - take the first one for CSV processing
-                        if (cards && cards.length > 0) {
-                            addCardToCollection(cards[0]);
-                        }
-                    },
-                    (cardName) => {
-                        // Card not found - just log and continue
-                        console.log(`Card not found during CSV processing: ${cardName}`);
-                    }
-                );
-            }
-        }
-        if (progress) progress.classList.add('hidden');
-        fetchAndRenderCollectionPageLocal('first');
-        showModal('modalCsvComplete');
-        processCsvBtn.disabled = false;
-        processCsvBtn.textContent = getTranslation('processCsvBtn-completed', state.activeLang);
-    };
-    reader.readAsText(file);
-}
-
-// Old JSON load logic - moved to eventHandlers.onLoadJson
-function oldLoadJsonFunction(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-        const progress = document.getElementById("progress");
-        const progressText = document.getElementById("progressText");
-        if (progress) progress.classList.remove('hidden');
-        if (progressText) progressText.textContent = getTranslation('processing', state.activeLang);
-        try {
-            const data = JSON.parse(event.target.result);
-            if (Array.isArray(data)) {
-                const collectionRef = collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`);
-
-                // 1. Fetch all existing documents to delete them reliably
-                if (progressText) progressText.textContent = "Cancellazione della collezione esistente...";
-                const existingDocsSnapshot = await getDocs(collectionRef);
-                const deletePromises = existingDocsSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
-                
-                // 2. Wait for all deletions to complete
-                await Promise.all(deletePromises);
-                console.log("Existing collection cleared.");
-
-                // 3. Add new cards from JSON
-                if (progressText) progressText.textContent = "Aggiunta delle nuove carte...";
-                const addPromises = data.map(cardData => {
-                    const cardToSave = { ...cardData };
-                    delete cardToSave.cardPrints;
-                    return addDoc(collectionRef, cardToSave);
-                });
-
-                // 4. Wait for all additions to complete
-                await Promise.all(addPromises);
-                console.log("New cards added from JSON.");
-
-                showModal('modalCardsLoaded', false, null, null, { 'CARD_COUNT': data.length });
-                fetchAndRenderCollectionPageLocal('first');
-                calculateAndDisplayTotalValueLocal();
-            } else {
-                showModal('modalInvalidJson');
-            }
-        } catch (error) {
-            console.error("Errore nel parsing o nel caricamento del JSON:", error);
-            showModal('modalJsonLoadError');
-        } finally {
-            if (progress) progress.classList.add('hidden');
-        }
-    };
-    reader.readAsText(file);
-}
-
-// Deck Builder Logic
-async function addDeck(name) {
-    await firebaseAddDeck(state.userId, name);
-}
-
-async function updateDeck(deckId, data) {
-    await firebaseUpdateDeck(state.userId, deckId, data);
-}
-
-
-async function enterDeckEditor(deckId) {
-    state.setCurrentDeckId(deckId);
-    state.setCurrentDeck(state.decks.find(d => d.id === deckId));
-    if (!state.currentDeck) {
-        return;
-    }
-    document.getElementById('decks-list').classList.add('hidden');
-    document.getElementById('deck-editor').classList.remove('hidden');
-    
-    const deckEditorNameInput = document.getElementById('deck-editor-name-input');
-    deckEditorNameInput.value = state.currentDeck.name;
-    deckEditorNameInput.addEventListener('change', async (e) => {
-        await updateDeck(state.currentDeckId, { name: e.target.value });
-    });
-
-    renderDeckCards(state.currentDeck, state.activeLang, async (cardId) => {
-        await firebaseRemoveCardFromDeck(state.userId, state.currentDeckId, cardId, state.currentDeck.cards || []);
-    });
-    
-    // For renderCollectionCards, we need to get the collection data first
-    const collectionSearchInput = document.getElementById('collectionSearchInput');
-    const searchTerm = collectionSearchInput.value.toLowerCase();
-    const collectionSnapshot = await getDocs(query(collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`), orderBy('name')));
-    const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
-    const filteredCollection = fullCollection.filter(card => {
-        const cardName = card.result.printed_name || card.result.name;
-        return cardName.toLowerCase().includes(searchTerm);
-    });
-    
-    renderCollectionCards(filteredCollection, searchTerm, state.activeLang, async (cardData) => {
-        await firebaseAddCardToDeck(state.userId, state.currentDeckId, cardData, state.currentDeck.cards || []);
-    });
-}
-
+// =================================================================================================
+// --- APP START ---
+// =================================================================================================
 window.onload = () => {
   loadSets();
   updateUI(state.activeLang);
