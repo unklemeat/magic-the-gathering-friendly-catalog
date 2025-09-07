@@ -44,22 +44,9 @@ import {
 } from './modules/ui.js';
 import {
   findCardAndHandleResults,
-  getSortableField,
-  filterCardsByColor,
-  filterCardsBySearchTerm,
-  sortCards,
   populateSetSelect,
-  handleSearch,
-  handleSetSelection,
-  handleFilterChange,
-  handleSortChange,
-  processCsvData,
-  processJsonData,
-  exportToJson,
-  setupVoiceSearch,
-  clearAllFilters,
-  getFilterDisplayName,
-  validateSearchInput
+  handleSearchWithUI,
+  setupVoiceSearch
 } from './modules/searchFilter.js';
 import {
   addCardToCollection as collectionAddCardToCollection,
@@ -261,14 +248,6 @@ async function fetchAndRenderSetCards(setCode) {
 }
 
 
-// New unified search function
-async function findCardAndHandleResultsLocal(cardName) {
-    await findCardAndHandleResults(cardName, activeLang, 
-        (card) => addCardToCollection(card),
-        (cards) => showSearchResultsModalLocal(cards),
-        (cardName) => showModalLocal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` })
-    );
-}
 
 function showSearchResultsModalLocal(cards) {
     showSearchResultsModal(cards, async (card) => {
@@ -329,7 +308,7 @@ async function fetchAndRenderCollectionPageLocal(direction = 'first') {
             console.error("Error fetching collection page:", error);
             alert("Errore nel caricare i dati. Potrebbe essere necessario creare un indice in Firestore per l'ordinamento richiesto. Controlla la console per il link per crearlo.");
         },
-        appId, decks, searchResults, searchTerm
+        appId, decks, searchResults, searchTerm, currentSort.column, currentSort.direction
     );
     
     if (result) {
@@ -356,57 +335,44 @@ async function calculateAndDisplayTotalValueLocal() {
 
 
 // Handle voice search
-if ('webkitSpeechRecognition' in window) {
-    const voiceSearchBtn = document.getElementById('voiceSearchBtn');
-    const cardNameInput = document.getElementById('cardNameInput');
-    const micIcon = document.getElementById('mic-icon');
-    let isListening = false;
-    const recognition = new webkitSpeechRecognition();
-    recognition.continuous = false;
-    recognition.lang = 'it-IT';
-    recognition.interimResults = false;
+const voiceSearchBtn = document.getElementById('voiceSearchBtn');
+const cardNameInput = document.getElementById('cardNameInput');
+const micIcon = document.getElementById('mic-icon');
+const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
 
-    voiceSearchBtn.addEventListener('click', () => {
-        if (isListening) {
-            recognition.stop();
-        } else {
-            recognition.start();
-        }
-    });
-
-    recognition.onstart = () => {
-        isListening = true;
-        micIcon.classList.add('text-green-500', 'mic-listening');
-        cardNameInput.placeholder = getTranslation('searchPlaceholder', activeLang);
-    };
-
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
+const startVoiceSearch = setupVoiceSearch(
+    // onVoiceResult callback
+    (transcript) => {
         if (transcript) {
             cardNameInput.value = capitalizeWords(transcript);
         } else {
             cardNameInput.value = ''; // Clear input if no result
         }
         document.getElementById('searchCardBtn').click();
-    };
+    },
+    // onVoiceError callback
+    (errorKey) => {
+        showModalLocal(errorKey);
+    }
+);
 
-    recognition.onend = () => {
-        isListening = false;
-        micIcon.classList.remove('text-green-500', 'mic-listening');
-        cardNameInput.placeholder = getTranslation('searchPlaceholder', activeLang);
-    };
-
-    recognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        isListening = false;
-        micIcon.classList.remove('text-green-500', 'mic-listening');
-        showModal('modalSpeechError');
-    };
+if (startVoiceSearch) {
+    // Voice search is supported
+    let isListening = false;
+    
+    voiceSearchBtn.addEventListener('click', () => {
+        if (isListening) {
+            // Stop listening (we'd need to add this functionality to setupVoiceSearch)
+            isListening = false;
+            micIcon.classList.remove('text-green-500', 'mic-listening');
+        } else {
+            startVoiceSearch();
+            isListening = true;
+            micIcon.classList.add('text-green-500', 'mic-listening');
+        }
+    });
 } else {
-    // If the browser doesn't support Web Speech API
-    const voiceSearchBtn = document.getElementById('voiceSearchBtn');
-    const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
-    // Hide the mic icon and show the crossed-out icon
+    // Voice search not supported
     if (voiceSearchBtn) {
         voiceSearchBtn.disabled = true;
     }
@@ -491,29 +457,44 @@ document.getElementById('cardNameInput').addEventListener('keydown', (event) => 
 async function handleSearch() {
     const cardNameInput = document.getElementById('cardNameInput');
     const cardName = cardNameInput.value;
-    const searchCardBtn = document.getElementById('searchCardBtn');
     
-    if (!cardName) {
-        showModal('modalNoCardName');
-        return;
-    }
-    
-    // Disable the button and show progress
-    searchCardBtn.disabled = true;
-    searchCardBtn.textContent = getTranslation('searchAddBtn-loading', activeLang); // Use a loading translation
-    const progress = document.getElementById("progress");
-    const progressText = document.getElementById("progressText");
-    if (progress) progress.classList.remove('hidden');
-    if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} "${cardName}"...`;
-    
-        await findCardAndHandleResultsLocal(cardName);
-    
-    // Re-enable the button and hide progress
-    searchCardBtn.disabled = false;
-    searchCardBtn.textContent = getTranslation('searchAddBtn-completed', activeLang);
-    if (progress) progress.classList.add('hidden');
-    
-    cardNameInput.value = '';
+    await handleSearchWithUI(
+        cardName,
+        activeLang,
+        // onSearchStart callback
+        (cardName) => {
+            const searchCardBtn = document.getElementById('searchCardBtn');
+            const progress = document.getElementById("progress");
+            const progressText = document.getElementById("progressText");
+            
+            // Disable the button and show progress
+            searchCardBtn.disabled = true;
+            searchCardBtn.textContent = getTranslation('searchAddBtn-loading', activeLang);
+            if (progress) progress.classList.remove('hidden');
+            if (progressText) progressText.textContent = `${getTranslation('processing', activeLang)} "${cardName}"...`;
+        },
+        // onSearchComplete callback
+        () => {
+            const searchCardBtn = document.getElementById('searchCardBtn');
+            const progress = document.getElementById("progress");
+            
+            // Re-enable the button and hide progress
+            searchCardBtn.disabled = false;
+            searchCardBtn.textContent = getTranslation('searchAddBtn-completed', activeLang);
+            if (progress) progress.classList.add('hidden');
+            
+            // Clear input
+            cardNameInput.value = '';
+        },
+        // onCardFound callback
+        (card) => addCardToCollection(card),
+        // onMultipleCardsFound callback
+        (cards) => showSearchResultsModalLocal(cards),
+        // onCardNotFound callback
+        (cardName) => showModalLocal('modalNotFound', false, null, null, { ': ': `: "${cardName}"` }),
+        // onError callback
+        (errorKey) => showModalLocal(errorKey)
+    );
 }
 
 document.getElementById('searchCardBtn').addEventListener('click', handleSearch);

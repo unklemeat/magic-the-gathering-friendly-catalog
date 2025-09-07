@@ -221,6 +221,37 @@ export async function handleSearch(cardName, activeLang, onCardFound, onMultiple
 }
 
 /**
+ * Handle complete search workflow with UI state management
+ * @param {string} cardName - Name of the card to search
+ * @param {string} activeLang - Current language
+ * @param {Function} onSearchStart - Callback when search starts (for UI updates)
+ * @param {Function} onSearchComplete - Callback when search completes (for UI updates)
+ * @param {Function} onCardFound - Callback when a single card is found
+ * @param {Function} onMultipleCardsFound - Callback when multiple cards are found
+ * @param {Function} onCardNotFound - Callback when no card is found
+ * @param {Function} onError - Callback for errors
+ */
+export async function handleSearchWithUI(cardName, activeLang, onSearchStart, onSearchComplete, onCardFound, onMultipleCardsFound, onCardNotFound, onError) {
+    if (!cardName) {
+        onError('modalNoCardName');
+        return;
+    }
+
+    // Start search workflow
+    onSearchStart(cardName);
+
+    try {
+        await findCardAndHandleResults(cardName, activeLang, onCardFound, onMultipleCardsFound, onCardNotFound);
+    } catch (error) {
+        console.error('Search error:', error);
+        onError('modalApiError');
+    } finally {
+        // Complete search workflow
+        onSearchComplete();
+    }
+}
+
+/**
  * Handle set selection change
  * @param {string} setCode - Selected set code
  * @param {Function} onSetSelected - Callback when set is selected

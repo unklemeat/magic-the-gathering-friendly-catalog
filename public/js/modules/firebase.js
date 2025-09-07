@@ -152,7 +152,7 @@ export async function removeCardFromCollection(userId, cardId) {
  * @param {string} searchTerm - Search term for filtering
  * @returns {Object|null} Firestore query or null
  */
-export function buildBaseCollectionQuery(userId, searchTerm = '') {
+export function buildBaseCollectionQuery(userId, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
   if (!db || !userId) return null;
   
   let q = collection(db, `artifacts/${appId}/users/${userId}/collection`);
@@ -163,6 +163,11 @@ export function buildBaseCollectionQuery(userId, searchTerm = '') {
     baseConstraints.push(orderBy('name'));
     baseConstraints.push(where('name', '>=', capitalizedSearchTerm));
     baseConstraints.push(where('name', '<=', capitalizedSearchTerm + '\uf8ff'));
+  } else if (sortColumn) {
+    // Import getSortableField from searchFilter module
+    const { getSortableField } = require('./searchFilter.js');
+    const field = getSortableField(sortColumn);
+    baseConstraints.push(orderBy(field, sortDirection));
   } else {
     baseConstraints.push(orderBy('name'));
   }
@@ -179,10 +184,10 @@ export function buildBaseCollectionQuery(userId, searchTerm = '') {
  * @param {Object} lastVisible - Last visible document for pagination
  * @returns {Promise<Object>} Page data with cards and pagination info
  */
-export async function fetchCollectionPage(userId, direction = 'first', cardsPerPage = 50, pageFirstDocs = [null], lastVisible = null, searchTerm = '') {
+export async function fetchCollectionPage(userId, direction = 'first', cardsPerPage = 50, pageFirstDocs = [null], lastVisible = null, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
   if (!db) return { cards: [], hasMore: false, lastVisible: null };
   
-  let baseQuery = buildBaseCollectionQuery(userId, searchTerm);
+  let baseQuery = buildBaseCollectionQuery(userId, searchTerm, sortColumn, sortDirection);
   let pageQuery;
 
   if (direction === 'first') {

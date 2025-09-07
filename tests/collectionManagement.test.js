@@ -180,7 +180,7 @@ describe('Collection Management Module', () => {
       );
       
       expect(toggleProgress).toHaveBeenCalledWith(true);
-      expect(fetchCollectionPage).toHaveBeenCalledWith('user123', 'first', 50, [null], null, '');
+      expect(fetchCollectionPage).toHaveBeenCalledWith('user123', 'first', 50, [null], null, '', null, 'asc');
       expect(renderTable).toHaveBeenCalled();
       expect(updatePaginationUI).toHaveBeenCalled();
       expect(onSuccess).toHaveBeenCalledWith(mockPageData.cards);

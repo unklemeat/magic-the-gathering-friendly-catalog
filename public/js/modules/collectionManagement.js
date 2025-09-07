@@ -84,11 +84,11 @@ export async function deleteCardFromCollection(cardId, userId, onSuccess, onErro
  * @param {Function} onError - Callback for errors
  * @returns {Object} Updated pagination state
  */
-export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError, appId = null, decks = [], searchResults = [], searchTerm = '') {
+export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError, appId = null, decks = [], searchResults = [], searchTerm = '', sortColumn = null, sortDirection = 'asc') {
     toggleProgress(true);
     
     try {
-        const pageData = await fetchCollectionPage(userId, direction, cardsPerPage, pageFirstDocs, lastVisible, searchTerm);
+        const pageData = await fetchCollectionPage(userId, direction, cardsPerPage, pageFirstDocs, lastVisible, searchTerm, sortColumn, sortDirection);
         
         let newCurrentPage = currentPage;
         let newPageFirstDocs = [...pageFirstDocs];

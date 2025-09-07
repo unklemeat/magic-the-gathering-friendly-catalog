@@ -4,6 +4,7 @@
  */
 
 import { getTranslation } from './translations.js';
+import { filterCardsByColor } from './searchFilter.js';
 
 /**
  * Update the UI based on the selected language
@@ -274,17 +275,7 @@ export function renderTable(searchResults, activeFilters, activeLang, onSetChang
     // Client-side COLOR filtering on the current page of results
     const allChecked = document.getElementById('filter-all')?.checked;
     if (!allChecked) {
-        pageResults = pageResults.filter(r => {
-            const cardColors = r.result.colors;
-            const typeLine = r.result.type_line;
-
-            const matchesMulti = activeFilters.includes('multi') && cardColors && cardColors.length > 1;
-            const matchesColorless = activeFilters.includes('incolor') && (!cardColors || cardColors.length === 0) && !(typeLine && typeLine.includes('Land'));
-            const matchesSpecificColor = activeFilters.some(filterColor => cardColors && cardColors.includes(filterColor));
-            const matchesLand = activeFilters.includes('incolor') && typeLine && typeLine.includes('Land');
-
-            return matchesMulti || matchesColorless || matchesSpecificColor || matchesLand;
-        });
+        pageResults = filterCardsByColor(pageResults, activeFilters);
     }
 
     pageResults.forEach(result => {
