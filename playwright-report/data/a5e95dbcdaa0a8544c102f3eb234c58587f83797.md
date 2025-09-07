@@ -1,0 +1,88 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - navigation [ref=e2]:
+    - generic [ref=e3]:
+      - heading "MTG Friendly Catalog" [level=1] [ref=e4] [cursor=pointer]
+      - generic [ref=e5]:
+        - combobox [ref=e6]:
+          - option "Italiano" [selected]
+          - option "English"
+        - button "API Ok" [ref=e9] [cursor=pointer]
+  - main [ref=e10]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - button "Cerca Carta" [ref=e14] [cursor=pointer]
+        - button "Mazzi" [ref=e15] [cursor=pointer]
+        - button "Esplora Espansioni" [ref=e16] [cursor=pointer]
+        - button "Carica CSV" [ref=e17] [cursor=pointer]
+        - button "Gestisci Dati" [ref=e18] [cursor=pointer]
+      - generic [ref=e19]:
+        - heading "Cerca e Aggiungi una singola carta" [level=2] [ref=e20]
+        - generic [ref=e21]:
+          - generic [ref=e22]:
+            - textbox "Inserisci il nome della carta o parla..." [ref=e23]
+            - button "Riconoscimento vocale supportato solo su alcuni browser" [ref=e24] [cursor=pointer]:
+              - img [ref=e25] [cursor=pointer]
+          - button "Cerca & Aggiungi" [active] [ref=e29] [cursor=pointer]
+    - generic [ref=e30]:
+      - generic [ref=e31]:
+        - heading "Collezione" [level=2] [ref=e32]
+        - paragraph [ref=e34]: "Valore Totale:"
+      - generic [ref=e36]:
+        - generic [ref=e37]:
+          - checkbox "Tutti" [checked] [ref=e38]
+          - generic [ref=e39]: Tutti
+        - generic [ref=e40]:
+          - checkbox "Bianco" [ref=e41]
+          - generic [ref=e42]: Bianco
+        - generic [ref=e43]:
+          - checkbox "Blu" [ref=e44]
+          - generic [ref=e45]: Blu
+        - generic [ref=e46]:
+          - checkbox "Nero" [ref=e47]
+          - generic [ref=e48]: Nero
+        - generic [ref=e49]:
+          - checkbox "Rosso" [ref=e50]
+          - generic [ref=e51]: Rosso
+        - generic [ref=e52]:
+          - checkbox "Verde" [ref=e53]
+          - generic [ref=e54]: Verde
+        - generic [ref=e55]:
+          - checkbox "Multicolore" [ref=e56]
+          - generic [ref=e57]: Multicolore
+        - generic [ref=e58]:
+          - checkbox "Incolore/Terre" [ref=e59]
+          - generic [ref=e60]: Incolore/Terre
+      - generic [ref=e61]:
+        - textbox "Cerca per nome nella collezione..." [ref=e62]
+        - button "Cerca" [ref=e63] [cursor=pointer]
+        - button "Reset" [ref=e64] [cursor=pointer]
+      - table [ref=e66]:
+        - rowgroup [ref=e67]:
+          - row "# Immagine Nome ITA Nome ENG Colore Set Prezzo EUR USD Price Dettagli Elimina" [ref=e68]:
+            - cell "#" [ref=e69]
+            - cell "Immagine" [ref=e70]
+            - cell "Nome ITA" [ref=e71]
+            - cell "Nome ENG" [ref=e72]
+            - cell "Colore" [ref=e73]
+            - cell "Set" [ref=e74]
+            - cell "Prezzo EUR" [ref=e75]
+            - cell "USD Price" [ref=e76]
+            - cell "Dettagli" [ref=e77]
+            - cell "Elimina" [ref=e78]
+        - rowgroup
+      - generic [ref=e79]:
+        - button "< Precedente" [ref=e80] [cursor=pointer]
+        - generic [ref=e82]:
+          - generic [ref=e83]: "Mostra:"
+          - combobox "Mostra:" [ref=e84]:
+            - option "50" [selected]
+            - option "100"
+            - option "500"
+        - button "Successivo >" [ref=e85] [cursor=pointer]
+  - generic [ref=e87]:
+    - paragraph [ref=e88]: Inserisci un nome di carta per la ricerca.
+    - button "modalOk" [ref=e90] [cursor=pointer]
+```
