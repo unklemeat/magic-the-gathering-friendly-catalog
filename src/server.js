@@ -6,9 +6,6 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Serve static files from the public directory
-app.use(express.static(path.join(__dirname, '../public')));
-
 // Route for the main page with environment variables injection
 app.get('/', (req, res) => {
     const indexPath = path.join(__dirname, '../public/index.html');
@@ -46,6 +43,9 @@ app.get('/', (req, res) => {
     
     res.send(html);
 });
+
+// Serve static files from the public directory (after routes)
+app.use(express.static(path.join(__dirname, '../public')));
 
 // Start the server
 app.listen(PORT, () => {

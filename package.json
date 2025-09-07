@@ -7,6 +7,8 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "dev:live": "concurrently \"npm run dev\" \"browser-sync start --config bs-config.js\"",
+    "build": "node build.js",
+    "build:firebase": "npm run build && firebase deploy",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:e2e": "playwright test",
