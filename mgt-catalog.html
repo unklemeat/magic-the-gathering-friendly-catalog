@@ -189,7 +189,7 @@
         </div>
         
         <div id="search-tab" class="tab-content pt-4">
-            <h2 class="text-xl font-bold mb-4" data-lang-key="searchCardTitle">Cerca una singola carta</h2>
+            <h2 class="text-xl font-bold mb-4" data-lang-key="searchCardTitle"></h2>
             <div class="flex flex-col md:flex-row items-stretch gap-4">
                 <div class="relative flex-grow flex items-center">
                     <input type="text" id="cardNameInput" placeholder="Inserisci il nome della carta o parla..." class="flex-grow p-3 pr-10 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors" data-lang-placeholder="searchPlaceholder" />
@@ -325,6 +325,13 @@
             </div>
         </div>
         
+        <!-- Search Input for Collection -->
+        <div class="mb-4 flex gap-2">
+            <input type="text" id="collectionFilterInput" class="flex-grow p-3 border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 transition-colors" data-lang-placeholder="collectionFilterPlaceholder" />
+            <button id="collectionSearchBtn" class="bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-xl shadow-lg" data-lang-key="collectionSearchBtn"></button>
+            <button id="collectionResetBtn" class="bg-gray-400 hover:bg-gray-500 text-white font-semibold py-3 px-4 rounded-xl shadow-lg" data-lang-key="collectionResetBtn"></button>
+        </div>
+        
         <div class="table-container">
             <table id="resultsTable" class="w-full rounded-lg">
                 <thead>
@@ -343,6 +350,22 @@
                 </thead>
                 <tbody></tbody>
             </table>
+        </div>
+         <!-- Pagination Controls -->
+        <div id="paginationControls" class="flex justify-between items-center mt-4">
+            <button id="prevPageBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" data-lang-key="prevPageBtn"></button>
+            <div class="flex items-center gap-4">
+                 <span id="pageInfo" class="text-gray-700 font-semibold"></span>
+                 <div class="flex items-center gap-2">
+                    <label for="pageSizeSelect" class="text-sm font-medium text-gray-700" data-lang-key="pageSizeLabel"></label>
+                    <select id="pageSizeSelect" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-purple-500 focus:border-purple-500 p-2">
+                        <option value="50" selected>50</option>
+                        <option value="100">100</option>
+                        <option value="500">500</option>
+                    </select>
+                 </div>
+            </div>
+            <button id="nextPageBtn" class="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed" data-lang-key="nextPageBtn"></button>
         </div>
     </div>
 </main>
@@ -397,7 +420,7 @@
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs, limit, startAfter, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -417,6 +440,13 @@ let userId;
 let decks = [];
 let currentDeck = null;
 let currentDeckId = null;
+
+// Pagination state
+let lastVisible = null;
+let firstVisible = null;
+let pageFirstDocs = [null]; // Start with null for the first page
+let currentPage = 1;
+let cardsPerPage = 50;
 
 
 // --- CONFIGURAZIONE FIREBASE PER ESECUZIONE LOCALE ---
@@ -463,7 +493,7 @@ if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
             userId = user.uid;
             console.log("User authenticated:", userId);
             
-            // Imposta i listener in tempo reale per mazzi e collezione
+            // Imposta i listener in tempo reale per i mazzi
             const decksQuery = query(collection(db, `artifacts/${appId}/users/${userId}/decks`));
             onSnapshot(decksQuery, (snapshot) => {
                 decks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -490,17 +520,8 @@ if (Object.keys(firebaseConfig).length > 0 && firebaseConfig.apiKey) {
                 }
             });
 
-            const collectionQuery = query(collection(db, `artifacts/${appId}/users/${userId}/collection`));
-            onSnapshot(collectionQuery, (snapshot) => {
-                searchResults = snapshot.docs.map(doc => ({ id: doc.id, result: doc.data() }));
-                console.log("Collection loaded:", searchResults);
-                const activeButton = document.querySelector('.tab-button.active');
-                if (!activeButton) return;
-                const currentTab = activeButton.dataset.tab;
-                if (currentTab === 'search-tab') {
-                    renderTable();
-                }
-            });
+            // Esegui il fetch della prima pagina della collezione
+            fetchAndRenderCollectionPage('first');
             
         } else {
             console.log("No user authenticated.");
@@ -541,9 +562,9 @@ const translations = {
     createDeckBtn: 'Crea Mazzo',
     myDeckTitle: 'Il Mio Mazzo',
     collectionTitle: 'La Mia Collezione',
-    filterCollectionPlaceholder: 'Filtra carte dalla tua collezione...',
+    collectionFilterPlaceholder: 'Cerca per nome nella collezione...',
     backBtn: 'Indietro',
-    searchCardTitle: 'Cerca una singola carta',
+    searchCardTitle: 'Cerca e Aggiungi una singola carta',
     searchPlaceholder: 'Inserisci il nome della carta o parla...',
     voiceSearchTooltip: 'Riconoscimento vocale supportato solo su alcuni browser',
     searchAddBtn: 'Cerca & Aggiungi',
@@ -605,7 +626,13 @@ const translations = {
     modalInvalidDecksJson: 'Il file JSON dei mazzi non è valido o è corrotto.',
     modalRemoveFromDecks: 'Questa carta è presente nel mazzo/i: DECK_NAMES. Vuoi rimuoverla anche da lì?',
     deleteOnlyFromCollectionBtn: 'Solo dalla Collezione',
-    deleteAllBtn: 'Sì, da tutto'
+    deleteAllBtn: 'Sì, da tutto',
+    prevPageBtn: '&lt; Precedente',
+    nextPageBtn: 'Successivo &gt;',
+    pageInfoText: 'Pagina {currentPage}',
+    pageSizeLabel: 'Mostra:',
+    collectionSearchBtn: 'Cerca',
+    collectionResetBtn: 'Reset'
   },
   eng: {
     title: 'MTG Friendly Catalog',
@@ -627,9 +654,9 @@ const translations = {
     createDeckBtn: 'Create Deck',
     myDeckTitle: 'My Deck',
     collectionTitle: 'My Collection',
-    filterCollectionPlaceholder: 'Filter cards from your collection...',
+    collectionFilterPlaceholder: 'Search in your collection...',
     backBtn: 'Back',
-    searchCardTitle: 'Search for a single card',
+    searchCardTitle: 'Search & Add a single card',
     searchPlaceholder: 'Enter card name or speak...',
     voiceSearchTooltip: 'Voice recognition is supported only on some browsers',
     searchAddBtn: 'Search & Add',
@@ -691,7 +718,13 @@ const translations = {
     modalInvalidDecksJson: 'The decks JSON file is invalid or corrupted.',
     modalRemoveFromDecks: 'This card is in the following deck(s): DECK_NAMES. Do you want to remove it from there as well?',
     deleteOnlyFromCollectionBtn: 'Collection Only',
-    deleteAllBtn: 'Yes, from Everywhere'
+    deleteAllBtn: 'Yes, from Everywhere',
+    prevPageBtn: '&lt; Previous',
+    nextPageBtn: 'Next &gt;',
+    pageInfoText: 'Page {currentPage}',
+    pageSizeLabel: 'Show:',
+    collectionSearchBtn: 'Search',
+    collectionResetBtn: 'Reset'
   }
 };
 
@@ -700,7 +733,7 @@ function updateUI(lang) {
     document.querySelectorAll('[data-lang-key]').forEach(element => {
         const key = element.dataset.langKey;
         if (translations[lang] && translations[lang][key]) {
-            element.textContent = translations[lang][key];
+            element.innerHTML = translations[lang][key];
         }
     });
 
@@ -717,6 +750,7 @@ function updateUI(lang) {
             element.title = translations[lang][key];
         }
     });
+    updatePaginationUI(searchResults.length);
 }
 
 // Table sorting variables
@@ -930,7 +964,7 @@ async function findCardAndHandleResults(cardName) {
       }
     }
     
-    showModal('modalNotFound' + cardName);
+    showModal(translations[activeLang].modalNotFound + ` "${cardName}"`);
 }
 
 function showSearchResultsModal(cards) {
@@ -1044,6 +1078,10 @@ async function addCardToCollection(cardData) {
         delete cardToSave.cardPrints; // Remove the large array to avoid exceeding size limit
         await addDoc(collectionRef, cardToSave);
         console.log("Card added to Firestore collection:", cardToSave.name);
+        
+        // Always refresh the first page to show the new card.
+        fetchAndRenderCollectionPage('first');
+
     } catch (e) {
         console.error("Error adding card to collection:", e);
     }
@@ -1151,6 +1189,12 @@ function addRow(data, uniqueId) {
             deck.cards && deck.cards.some(card => card.oracle_id === cardOracleId)
         );
 
+        const deleteCardFromCollection = async () => {
+            const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
+            await deleteDoc(cardDocRef);
+            fetchAndRenderCollectionPage('current'); // Refresh current page
+        };
+
         if (decksWithCard.length > 0) {
             const deckNames = decksWithCard.map(d => d.name).join(', ');
             
@@ -1175,15 +1219,13 @@ function addRow(data, uniqueId) {
             };
 
             document.getElementById('deleteOnlyFromCollectionBtn').onclick = async () => {
-                const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
-                await deleteDoc(cardDocRef);
+                await deleteCardFromCollection();
                 modal.classList.add('hidden');
                 restoreModalButtons();
             };
 
             document.getElementById('deleteAllBtn').onclick = async () => {
-                const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
-                await deleteDoc(cardDocRef);
+                await deleteCardFromCollection();
                 await removeCardFromAllDecksByOracleId(cardOracleId);
                 modal.classList.add('hidden');
                 restoreModalButtons();
@@ -1199,8 +1241,7 @@ function addRow(data, uniqueId) {
         } else {
             // Card is not in any deck, show the simple confirmation
             showModal('modalRemoveCard', true, async () => {
-                const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
-                await deleteDoc(cardDocRef);
+                await deleteCardFromCollection();
             });
         }
     });
@@ -1209,7 +1250,8 @@ function addRow(data, uniqueId) {
 // Re-index the rows after a deletion
 function reindexRows() {
   document.querySelectorAll('#resultsTable tbody tr').forEach((row, index) => {
-    row.querySelector('td:first-child').textContent = index + 1;
+    const pageOffset = (currentPage - 1) * cardsPerPage;
+    row.querySelector('td:first-child').textContent = pageOffset + index + 1;
   });
 }
 
@@ -1223,70 +1265,30 @@ function renderTable() {
         return;
     }
     
-    let filteredResults = [...searchResults];
+    let pageResults = [...searchResults];
 
-    filteredResults = searchResults.filter(r => {
-        const cardColors = r.result.colors;
-        const typeLine = r.result.type_line;
-        
-        // If "all" is selected or no other filters are active, show all cards
-        const allChecked = document.getElementById('filter-all').checked;
-        if (allChecked) {
-            return true;
-        }
+    // Client-side COLOR filtering on the current page of results
+    const allChecked = document.getElementById('filter-all').checked;
+    if (!allChecked) {
+        pageResults = pageResults.filter(r => {
+            const cardColors = r.result.colors;
+            const typeLine = r.result.type_line;
 
-        const matchesMulti = activeFilters.includes('multi') && cardColors && cardColors.length > 1;
-        const matchesColorless = activeFilters.includes('incolor') && (!cardColors || cardColors.length === 0) && !(typeLine && typeLine.includes('Land'));
-        const matchesSpecificColor = activeFilters.some(filterColor => cardColors && cardColors.includes(filterColor));
-        const matchesLand = activeFilters.includes('incolor') && typeLine && typeLine.includes('Land');
+            const matchesMulti = activeFilters.includes('multi') && cardColors && cardColors.length > 1;
+            const matchesColorless = activeFilters.includes('incolor') && (!cardColors || cardColors.length === 0) && !(typeLine && typeLine.includes('Land'));
+            const matchesSpecificColor = activeFilters.some(filterColor => cardColors && cardColors.includes(filterColor));
+            const matchesLand = activeFilters.includes('incolor') && typeLine && typeLine.includes('Land');
 
-        // A card is included if it matches any of the active filters
-        return matchesMulti || matchesColorless || matchesSpecificColor || matchesLand;
-    });
-
-    // Sort filtered results before rendering
-    if (currentSort.column) {
-        filteredResults.sort((a, b) => {
-            let aVal, bVal;
-
-            const getSortableValue = (item, column) => {
-                const card = item.result;
-                if (!card) return null;
-
-                switch (column) {
-                    case 'ita-name':
-                        return card.printed_name || card.name || '';
-                    case 'eng-name':
-                        return card.name || '';
-                    case 'color':
-                        return (card.colors && card.colors.length > 0) ? card.colors.join('') : 'z'; // 'z' to put colorless last
-                    case 'set':
-                        return card.set_name || card.set || '';
-                    case 'eur-price':
-                        return parseFloat(card.prices?.eur) || 0;
-                    case 'usd-price':
-                        return parseFloat(card.prices?.usd) || 0;
-                    default:
-                        return '';
-                }
-            };
-
-            aVal = getSortableValue(a, currentSort.column);
-            bVal = getSortableValue(b, currentSort.column);
-            
-            if (typeof aVal === 'string') {
-                return currentSort.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
-            } else {
-                return currentSort.direction === 'asc' ? aVal - bVal : bVal - aVal;
-            }
+            return matchesMulti || matchesColorless || matchesSpecificColor || matchesLand;
         });
     }
 
-    filteredResults.forEach(result => {
+    pageResults.forEach(result => {
         if (result && result.result) {
             addRow(result.result, result.id);
         }
     });
+    reindexRows();
 
     // Update visibility of name columns based on activeLang
     const itaNameCells = document.querySelectorAll('.text-ita-name');
@@ -1307,34 +1309,124 @@ function renderTable() {
     }
 }
 
-// Function to sort the table
-function sortColumn(column, direction) {
-  const tableBody = document.querySelector('#resultsTable tbody');
-  const rows = Array.from(document.getElementById('resultsTable').rows).slice(1);
-
-  rows.sort((a, b) => {
-    let aVal = a.children[headerIndex(column)].textContent.trim();
-    let bVal = b.children[headerIndex(column)].textContent.trim();
-
-    if (column === 'eur-price' || column === 'usd-price') {
-      const aPrice = parseFloat(aVal.replace(' €', '').replace('$', '').replace(',', '.')) || 0;
-      const bPrice = parseFloat(bVal.replace(' €', '').replace('$', '').replace(',', '.')) || 0;
-      return direction === 'asc' ? aPrice - bPrice : bPrice - aPrice;
-    } else {
-      return direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+// Helper to map sort column to firestore field name
+function getSortableField(column) {
+    switch (column) {
+        case 'ita-name': return 'printed_name';
+        case 'eng-name': return 'name';
+        case 'set': return 'set_name';
+        case 'eur-price': return 'prices.eur';
+        case 'usd-price': return 'prices.usd';
+        // Note: Sorting by color is complex with Firestore and is not implemented server-side.
+        default: return 'name'; // Default sort field
     }
-  });
-
-  rows.forEach(row => tableBody.appendChild(row));
-  reindexRows();
 }
 
-// Get the index of the header column
-function headerIndex(column) {
-  const headers = Array.from(document.querySelectorAll('#resultsTable th'));
-  const header = headers.find(h => h.dataset.sort === column);
-  return headers.indexOf(header);
+// Function to build the base query with current filters and sorting
+function buildBaseCollectionQuery() {
+    if (!db || !userId) return null;
+    let q = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+    let baseConstraints = [];
+
+    const searchTerm = document.getElementById('collectionFilterInput').value.trim();
+
+    if (searchTerm) {
+        const capitalizedSearchTerm = searchTerm.charAt(0).toUpperCase() + searchTerm.slice(1);
+        baseConstraints.push(orderBy('name'));
+        baseConstraints.push(where('name', '>=', capitalizedSearchTerm));
+        baseConstraints.push(where('name', '<=', capitalizedSearchTerm + '\uf8ff'));
+    } else if (currentSort.column) {
+        const direction = currentSort.direction;
+        const field = getSortableField(currentSort.column);
+        baseConstraints.push(orderBy(field, direction));
+    } else {
+        baseConstraints.push(orderBy('name', 'asc')); // Default sort order
+    }
+    
+    return query(q, ...baseConstraints);
 }
+
+// Main function to fetch and render a page of the collection
+async function fetchAndRenderCollectionPage(direction = 'first') {
+    if (!db) return;
+    document.getElementById("progress").classList.remove('hidden');
+    
+    let baseQuery = buildBaseCollectionQuery();
+    let pageQuery;
+
+    if (direction === 'first') {
+        currentPage = 1;
+        pageFirstDocs = [null];
+        pageQuery = query(baseQuery, limit(cardsPerPage));
+    } else if (direction === 'next') {
+        if (!lastVisible) { 
+            document.getElementById("progress").classList.add('hidden');
+            return; 
+        }
+        pageQuery = query(baseQuery, startAfter(lastVisible), limit(cardsPerPage));
+    } else if (direction === 'prev') {
+        if (currentPage <= 1) {
+             document.getElementById("progress").classList.add('hidden');
+            return;
+        }
+        pageFirstDocs.pop(); 
+        const prevPageStart = pageFirstDocs[pageFirstDocs.length - 1];
+        if (prevPageStart) {
+            pageQuery = query(baseQuery, startAfter(prevPageStart), limit(cardsPerPage));
+        } else {
+            pageQuery = query(baseQuery, limit(cardsPerPage));
+        }
+    } else { // 'current'
+         const prevPageStart = pageFirstDocs[pageFirstDocs.length - 1];
+         if (prevPageStart) {
+            pageQuery = query(baseQuery, startAfter(prevPageStart), limit(cardsPerPage));
+         } else {
+            pageQuery = query(baseQuery, limit(cardsPerPage));
+         }
+    }
+
+
+    try {
+        const documentSnapshots = await getDocs(pageQuery);
+
+        if (!documentSnapshots.empty) {
+            if (direction === 'next') {
+                currentPage++;
+                pageFirstDocs.push(documentSnapshots.docs[0]);
+            } else if (direction === 'prev') {
+                currentPage--;
+            }
+             firstVisible = documentSnapshots.docs[0];
+             lastVisible = documentSnapshots.docs[documentSnapshots.docs.length - 1];
+        } else if (direction !== 'first') {
+             // If we're not on the first page and get no results, it means we're past the end.
+             // Don't change the current page.
+        }
+        
+        searchResults = documentSnapshots.docs.map(doc => ({ id: doc.id, result: doc.data() }));
+        
+        renderTable(); 
+        updatePaginationUI(documentSnapshots.size);
+
+    } catch (error) {
+        console.error("Error fetching collection page:", error);
+        alert("Errore nel caricare i dati. Potrebbe essere necessario creare un indice in Firestore per l'ordinamento richiesto. Controlla la console per il link per crearlo.");
+    } finally {
+        document.getElementById("progress").classList.add('hidden');
+    }
+}
+
+function updatePaginationUI(fetchedCount) {
+    const prevBtn = document.getElementById('prevPageBtn');
+    const nextBtn = document.getElementById('nextPageBtn');
+    const pageInfo = document.getElementById('pageInfo');
+
+    prevBtn.disabled = currentPage === 1;
+    nextBtn.disabled = fetchedCount < cardsPerPage; 
+
+    pageInfo.innerHTML = translations[activeLang].pageInfoText.replace('{currentPage}', currentPage);
+}
+
 
 // Handle voice search
 if ('webkitSpeechRecognition' in window) {
@@ -1410,19 +1502,20 @@ document.querySelectorAll('.tab-button').forEach(button => {
         document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
 
         // Add active styles to the clicked button
-        e.target.classList.add('active');
-        e.target.classList.remove('text-gray-500', 'border-transparent');
-        e.target.classList.add('text-purple-700', 'border-purple-500');
+        const clickedButton = e.target;
+        clickedButton.classList.add('active');
+        clickedButton.classList.remove('text-gray-500', 'border-transparent');
+        clickedButton.classList.add('text-purple-700', 'border-purple-500');
 
         // Show corresponding content
-        const tabId = e.target.dataset.tab;
+        const tabId = clickedButton.dataset.tab;
         document.getElementById(tabId).classList.remove('hidden');
         
         const resultsSection = document.getElementById('resultsSection');
         if (resultsSection) {
             if (tabId === 'search-tab') {
                 resultsSection.classList.remove('hidden');
-                renderTable();
+                fetchAndRenderCollectionPage('first');
             } else {
                 resultsSection.classList.add('hidden');
             }
@@ -1539,7 +1632,7 @@ document.getElementById('processCsv').addEventListener('click', async () => {
             }
         }
         if (progress) progress.classList.add('hidden');
-        renderTable();
+        fetchAndRenderCollectionPage('first');
         showModal('modalCsvComplete');
         processCsvBtn.disabled = false;
         processCsvBtn.textContent = translations[activeLang]['processCsvBtn-completed'];
@@ -1606,7 +1699,7 @@ document.getElementById('loadJsonFile').addEventListener('change', (e) => {
                 console.log("New cards added from JSON.");
 
                 showModal('modalCardsLoaded', false, null, null, { 'CARD_COUNT': data.length });
-                // The onSnapshot listener will automatically handle the table rendering.
+                fetchAndRenderCollectionPage('first');
             } else {
                 showModal('modalInvalidJson');
             }
@@ -1706,9 +1799,7 @@ document.querySelectorAll('#resultsTable .sortable').forEach(header => {
     icon.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
 
     currentSort = { column, direction };
-
-    // Re-render the table with the new sort order
-    renderTable();
+    fetchAndRenderCollectionPage('first');
   });
 });
 
@@ -1745,6 +1836,7 @@ document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(
             }
         }
         
+        // When filtering, we re-render the current page of data client-side
         renderTable();
     });
 });
@@ -1753,7 +1845,6 @@ document.querySelectorAll('.color-filter-label input[type="checkbox"]').forEach(
 document.getElementById('lang-select').addEventListener('change', (e) => {
     activeLang = e.target.value;
     updateUI(activeLang);
-    renderTable();
 });
 
 document.getElementById('closeDetailsModalBtn').addEventListener('click', () => {
@@ -1858,7 +1949,12 @@ async function renderCollectionCards() {
     const searchTerm = collectionSearchInput.value.toLowerCase();
     collectionCardsGrid.innerHTML = '';
     
-    const filteredCollection = searchResults.filter(card => {
+    // In deck editor, we still show the whole (unpaginated) collection for now for simplicity.
+    // A future improvement could be paginating this view as well.
+    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`), orderBy('name')));
+    const fullCollection = collectionSnapshot.docs.map(d => ({id: d.id, result: d.data()}));
+
+    const filteredCollection = fullCollection.filter(card => {
         const cardName = card.result.printed_name || card.result.name;
         return cardName.toLowerCase().includes(searchTerm);
     });
@@ -1946,7 +2042,33 @@ document.getElementById('collectionSearchInput').addEventListener('input', () =>
     renderCollectionCards();
 });
 
-// Update the tab change logic to show/hide the results section
+// Pagination event listeners
+document.getElementById('nextPageBtn').addEventListener('click', () => fetchAndRenderCollectionPage('next'));
+document.getElementById('prevPageBtn').addEventListener('click', () => fetchAndRenderCollectionPage('prev'));
+document.getElementById('pageSizeSelect').addEventListener('change', (e) => {
+    cardsPerPage = parseInt(e.target.value, 10);
+    fetchAndRenderCollectionPage('first');
+});
+
+// Collection filter event listener
+document.getElementById('collectionSearchBtn').addEventListener('click', () => {
+    fetchAndRenderCollectionPage('first');
+});
+
+document.getElementById('collectionFilterInput').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+        event.preventDefault();
+        document.getElementById('collectionSearchBtn').click();
+    }
+});
+
+document.getElementById('collectionResetBtn').addEventListener('click', () => {
+    document.getElementById('collectionFilterInput').value = '';
+    fetchAndRenderCollectionPage('first');
+});
+
+
+// Tab switching logic
 document.querySelectorAll('.tab-button').forEach(button => {
     button.addEventListener('click', (e) => {
         // Remove active styles from all buttons
@@ -1959,18 +2081,20 @@ document.querySelectorAll('.tab-button').forEach(button => {
         document.querySelectorAll('.tab-content').forEach(content => content.classList.add('hidden'));
 
         // Add active styles to the clicked button
-        e.target.classList.add('active');
-        e.target.classList.remove('text-gray-500', 'border-transparent');
-        e.target.classList.add('text-purple-700', 'border-purple-500');
+        const clickedButton = e.target;
+        clickedButton.classList.add('active');
+        clickedButton.classList.remove('text-gray-500', 'border-transparent');
+        clickedButton.classList.add('text-purple-700', 'border-purple-500');
 
         // Show corresponding content
-        const tabId = e.target.dataset.tab;
+        const tabId = clickedButton.dataset.tab;
         document.getElementById(tabId).classList.remove('hidden');
         
         const resultsSection = document.getElementById('resultsSection');
         if (resultsSection) {
             if (tabId === 'search-tab') {
                 resultsSection.classList.remove('hidden');
+                fetchAndRenderCollectionPage('first');
             } else {
                 resultsSection.classList.add('hidden');
             }
@@ -1991,6 +2115,7 @@ document.querySelectorAll('.tab-button').forEach(button => {
 
 window.onload = () => {
   fetchSets();
+  updateUI(activeLang);
 };
 </script>
 
