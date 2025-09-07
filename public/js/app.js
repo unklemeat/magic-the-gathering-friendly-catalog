@@ -4,10 +4,20 @@ import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, d
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getTranslation } from './modules/translations.js';
+import { 
+  rateLimitedRequest, 
+  fetchSets, 
+  fetchAllPrintsByOracleId, 
+  searchCardsExact, 
+  searchCardFuzzy, 
+  fetchCardById, 
+  fetchSetCards,
+  normalizeName, 
+  capitalizeWords 
+} from './modules/scryfallApi.js';
 
 setLogLevel('debug');
 
-const SCRYFALL_API = "https://api.scryfall.com";
 let allSets = [];
 let searchResults = [];
 let activeFilters = ['all', 'W', 'U', 'B', 'R', 'G', 'multi', 'incolor'];
@@ -148,35 +158,6 @@ let currentSort = { column: null, direction: 'asc' };
 // API status variable
 let apiStatus = 'connecting';
 
-// Scryfall rate limiting logic (max 10 reqs per second)
-let requestQueue = [];
-let isProcessing = false;
-async function rateLimitedRequest(url) {
-  return new Promise((resolve) => {
-    requestQueue.push({ url, resolve });
-    processQueue();
-  });
-}
-
-async function processQueue() {
-  if (isProcessing || requestQueue.length === 0) return;
-  
-  isProcessing = true;
-  while (requestQueue.length > 0) {
-    const { url, resolve } = requestQueue.shift();
-    try {
-      const response = await fetch(url);
-      const data = await response.json();
-      resolve(data);
-    } catch (error) {
-      console.error("API Error:", error);
-      resolve(null);
-    }
-    // Wait 150ms between requests for safety margin
-    await new Promise(r => setTimeout(r, 150));
-  }
-  isProcessing = false;
-}
 
 // Function to update the visual API status
 function updateApiStatus(status, messageKey) {
@@ -200,13 +181,11 @@ function updateApiStatus(status, messageKey) {
 }
 
 // Fetch all sets from Scryfall on app startup
-async function fetchSets() {
+async function loadSets() {
   updateApiStatus('connecting', 'apiStatusConnecting');
   try {
-    const response = await rateLimitedRequest(`${SCRYFALL_API}/sets`);
-    if (response && response.data) {
-      // Sort sets by release date, from newest to oldest
-      allSets = response.data.filter(set => set.card_count > 0).sort((a, b) => new Date(b.released_at) - new Date(a.released_at));
+    allSets = await fetchSets();
+    if (allSets.length > 0) {
       updateApiStatus('ready', 'apiStatusReady');
       populateSetSelect();
     } else {
@@ -238,19 +217,12 @@ async function fetchAndRenderSetCards(setCode) {
     document.getElementById("progress").classList.remove('hidden');
     let totalCardsFetched = 0;
     
-    let url = `${SCRYFALL_API}/cards/search?order=set&q=set%3A${setCode}&unique=prints`;
-
     try {
-        while (url) {
-            const response = await rateLimitedRequest(url);
-            if (!response || !response.data) {
-                break;
-            }
+        const cards = await fetchSetCards(setCode);
+        totalCardsFetched = cards.length;
+        document.getElementById("progressText").textContent = `${getTranslation('processing', activeLang)} ${totalCardsFetched} carte...`;
 
-            totalCardsFetched += response.data.length;
-            document.getElementById("progressText").textContent = `${getTranslation('processing', activeLang)} ${totalCardsFetched} carte...`;
-
-            response.data.forEach(card => {
+        cards.forEach(card => {
                 const cardElement = document.createElement('div');
                 cardElement.className = 'card-tile p-2 bg-gray-100 rounded-lg shadow-md hover:shadow-xl transition-shadow cursor-pointer';
                 
@@ -267,9 +239,6 @@ async function fetchAndRenderSetCards(setCode) {
                 });
                 cardsContainer.appendChild(cardElement);
             });
-
-            url = response.has_more ? response.next_page : null;
-        }
     } catch (error) {
         console.error("Error fetching set cards:", error);
         showModal('modalApiError');
@@ -278,53 +247,15 @@ async function fetchAndRenderSetCards(setCode) {
     }
 }
 
-// Normalize card name by removing special characters and accents
-function normalizeName(name) {
-  return name.toLowerCase()
-    .replace(/[àáâãäå]/g, 'a')
-    .replace(/[èéêë]/g, 'e')
-    .replace(/[ìíîï]/g, 'i')
-    .replace(/[òóôõöø]/g, 'o')
-    .replace(/[ùúûü]/g, 'u')
-    .replace(/[ç]/g, 'c')
-    .replace(/[ñ]/g, 'n')
-    .replace(/[^a-z0-9\s\-'"]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
-// Capitalize the first letter of each word
-function capitalizeWords(str) {
-  return str.split(' ').map(word => {
-    if (word.length > 0) {
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    }
-    return '';
-  }).join(' ');
-}
 
-// Helper function to fetch all prints of a card by its oracle ID
-async function fetchAllPrintsByOracleId(oracleId) {
-    let allPrints = [];
-    let url = `${SCRYFALL_API}/cards/search?q=oracleid%3A${oracleId}&unique=prints&order=released`;
-    while (url) {
-        const response = await rateLimitedRequest(url);
-        if (!response || !response.data) {
-            break;
-        }
-        allPrints = allPrints.concat(response.data);
-        url = response.has_more ? response.next_page : null;
-    }
-    return allPrints;
-}
 
 // New unified search function
 async function findCardAndHandleResults(cardName) {
     const formattedName = cardName.trim();
     
     // Step 1: Strict search for exact match
-    let exactSearchUrl = `${SCRYFALL_API}/cards/search?q="${encodeURIComponent(formattedName)}"+lang%3A${activeLang}`;
-    const exactResult = await rateLimitedRequest(exactSearchUrl);
+    const exactResult = await searchCardsExact(formattedName, activeLang);
 
     if (exactResult && exactResult.data && exactResult.data.length > 0) {
         const exactMatches = exactResult.data.filter(card => normalizeName(card.name) === normalizeName(formattedName) || (card.printed_name && normalizeName(card.printed_name) === normalizeName(formattedName)));
@@ -341,8 +272,7 @@ async function findCardAndHandleResults(cardName) {
     }
     
     // Step 2: Fuzzy search as a fallback if no exact match is found
-    const namedSearchUrl = `${SCRYFALL_API}/cards/named?fuzzy=${encodeURIComponent(formattedName)}`;
-    const namedResult = await rateLimitedRequest(namedSearchUrl);
+    const namedResult = await searchCardFuzzy(formattedName);
     
     if (namedResult && namedResult.object === "card") {
       const allPrints = await fetchAllPrintsByOracleId(namedResult.oracle_id);
@@ -550,7 +480,7 @@ function addRow(data, uniqueId) {
         const selectedPrintId = e.target.value;
         const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, uniqueId);
         
-        const printDataResponse = await rateLimitedRequest(`${SCRYFALL_API}/cards/${selectedPrintId}`);
+        const printDataResponse = await fetchCardById(selectedPrintId);
         if (printDataResponse && printDataResponse.object === 'card') {
             const printToSave = { ...printDataResponse };
             delete printToSave.cardPrints;
@@ -1554,6 +1484,6 @@ document.querySelectorAll('.tab-button').forEach(button => {
 });
 
 window.onload = () => {
-  fetchSets();
+  loadSets();
   updateUI(activeLang);
 };
