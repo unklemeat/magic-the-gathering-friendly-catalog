@@ -1,5 +1,8 @@
 module.exports = {
-  testEnvironment: 'node',
+  testEnvironment: 'jsdom',
+  
+  // Setup files to run before each test file
+  setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   
   // Transform ES6 modules to CommonJS for testing
   transform: {
