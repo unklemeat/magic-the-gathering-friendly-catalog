@@ -217,7 +217,10 @@ async function fetchAndRenderSetCards(setCode) {
 
 // Main function to fetch and render a page of the collection
 async function fetchAndRenderCollectionPageLocal(direction = 'first') {
-    if (!state.db) return;
+    if (!state.db || !state.userId) {
+        console.log('Skipping collection fetch - database or user not ready');
+        return;
+    }
     
     // Read search term from DOM (this replaces the buildLocalCollectionQuery functionality)
     const searchTerm = document.getElementById('collectionFilterInput').value.trim();
@@ -251,7 +254,10 @@ async function fetchAndRenderCollectionPageLocal(direction = 'first') {
 }
 
 async function calculateAndDisplayTotalValueLocal() {
-    if (!state.db || !state.userId) return;
+    if (!state.db || !state.userId) {
+        console.log('Skipping total value calculation - database or user not ready');
+        return;
+    }
     
     await collectionCalculateAndDisplayTotalValue(state.userId, appId, state.activeLang,
         () => {
@@ -384,7 +390,10 @@ const eventHandlers = {
         if (resultsSection) {
             if (tabId === 'search-tab') {
                 resultsSection.classList.remove('hidden');
-                fetchAndRenderCollectionPageLocal('first');
+                // Only fetch collection if user is authenticated
+                if (state.userId && state.db) {
+                    fetchAndRenderCollectionPageLocal('first');
+                }
             } else {
                 resultsSection.classList.add('hidden');
             }
@@ -398,11 +407,14 @@ const eventHandlers = {
         }
 
         if (tabId === 'decks-tab') {
-            renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
-                (deckId) => showModalLocal('modalRemoveCard', true, async () => {
-                    const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
-                    await deleteDoc(deckDocRef);
-                }), state.activeLang);
+            // Only render decks if user is authenticated
+            if (state.userId && state.db) {
+                renderDecksList(state.decks, (deckId) => enterDeckEditor(deckId), 
+                    (deckId) => showModalLocal('modalRemoveCard', true, async () => {
+                        const deckDocRef = doc(state.db, `artifacts/${appId}/users/${state.userId}/decks`, deckId);
+                        await deleteDoc(deckDocRef);
+                    }), state.activeLang);
+            }
         }
     },
 
@@ -618,6 +630,11 @@ const eventHandlers = {
     },
 
     onCollectionSearch: async () => {
+        if (!state.db || !state.userId) {
+            console.log('Skipping collection search - database or user not ready');
+            return;
+        }
+        
         const collectionSearchInput = document.getElementById('collectionSearchInput');
         const searchTerm = collectionSearchInput.value.toLowerCase();
         const collectionSnapshot = await getDocs(query(collection(state.db, `artifacts/${appId}/users/${state.userId}/collection`), orderBy('name')));
