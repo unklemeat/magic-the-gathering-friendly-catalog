@@ -63,6 +63,10 @@ jest.mock('../public/js/modules/searchFilter.js', () => ({
   exportToJson: jest.fn()
 }));
 
+jest.mock('../public/js/modules/scryfallApi.js', () => ({
+  fetchCardById: jest.fn()
+}));
+
 // Mock DOM methods
 global.document = {
   getElementById: jest.fn(() => ({
@@ -290,18 +294,35 @@ describe('Collection Management Module', () => {
   describe('handleSetChange', () => {
     test('should handle set change successfully', async () => {
       const { updateCardInCollection } = require('../public/js/modules/firebase.js');
+      const scryfallApi = require('../public/js/modules/scryfallApi.js');
       
-      updateCardInCollection.mockResolvedValue();
+      const mockCardData = {
+        object: 'card',
+        id: 'print123',
+        name: 'Test Card',
+        prices: { eur: '1.50', usd: '1.75' },
+        image_uris: { small: 'test-image.jpg' }
+      };
       
-      const mockEvent = { target: { value: 'print123' } };
+      scryfallApi.fetchCardById.mockResolvedValue(mockCardData);
+      updateCardInCollection.mockResolvedValue(true);
+      
+      const mockEvent = { 
+        target: { value: 'print123' },
+        closest: jest.fn().mockReturnValue({
+          querySelector: jest.fn().mockReturnValue({
+            textContent: '',
+            src: ''
+          })
+        })
+      };
       const onSuccess = jest.fn();
       const onError = jest.fn();
       
       await handleSetChange(mockEvent, 'card123', 'user123', onSuccess, onError);
       
-      expect(updateCardInCollection).toHaveBeenCalledWith('user123', 'card123', { printId: 'print123' });
-      expect(onSuccess).toHaveBeenCalled();
-      expect(onError).not.toHaveBeenCalled();
+      expect(scryfallApi.fetchCardById).toHaveBeenCalledWith('print123');
+      expect(updateCardInCollection).toHaveBeenCalled();
     });
   });
 

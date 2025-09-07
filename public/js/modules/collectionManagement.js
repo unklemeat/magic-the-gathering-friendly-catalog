@@ -14,6 +14,7 @@ import {
   removeCardFromDeck as firebaseRemoveCardFromDeck,
   removeCardFromAllDecksByOracleId as firebaseRemoveCardFromAllDecksByOracleId
 } from './firebase.js';
+import { fetchCardById } from './scryfallApi.js';
 import { 
   renderTable,
   updatePaginationUI,
@@ -117,7 +118,18 @@ export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPa
         );
         
         renderTable(pageData.cards, activeFilters, activeLang, 
-            (e, uniqueId) => handleSetChange(e, uniqueId, userId),
+            (e, uniqueId) => handleSetChange(e, uniqueId, userId, 
+                (updatedCard) => {
+                    // Update the local searchResults array to keep it in sync
+                    const resultIndex = pageData.cards.findIndex(r => r.id === uniqueId);
+                    if (resultIndex > -1) {
+                        pageData.cards[resultIndex].result = updatedCard;
+                    }
+                    // Recalculate total value after price update
+                    uiCalculateAndDisplayTotalValue(userId, appId, activeLang, () => {}, () => {});
+                },
+                (error) => console.error("Error updating card set:", error)
+            ),
             deleteHandler,
             newCurrentPage, cardsPerPage
         );
@@ -250,8 +262,42 @@ export async function removeCardFromAllDecksByOracleId(oracleId, userId, onSucce
 export async function handleSetChange(e, uniqueId, userId, onSuccess, onError) {
     try {
         const selectedPrintId = e.target.value;
-        await updateCardInCollection(userId, uniqueId, { printId: selectedPrintId });
-        onSuccess();
+        
+        // Fetch the new card data from Scryfall
+        const printDataResponse = await fetchCardById(selectedPrintId);
+        if (printDataResponse && printDataResponse.object === 'card') {
+            const printToSave = { ...printDataResponse };
+            delete printToSave.cardPrints; // Remove large array to avoid size limits
+            
+            // Update the card in Firestore with the new data
+            await updateCardInCollection(userId, uniqueId, printToSave);
+            
+            // Update the UI with the new data
+            const parentRow = e.target.closest('tr');
+            if (parentRow) {
+                const prices = printToSave.prices;
+                const imageUrl = printToSave.image_uris?.small || 'https://placehold.co/74x104/E5E7EB/9CA3AF?text=No+Image';
+
+                // Update price displays
+                const priceEurElement = parentRow.querySelector('.price-eur');
+                const priceUsdElement = parentRow.querySelector('.price-usd');
+                const cardImgElement = parentRow.querySelector('.card-img');
+                
+                if (priceEurElement) {
+                    priceEurElement.textContent = prices.eur ? `${prices.eur} €` : "—";
+                }
+                if (priceUsdElement) {
+                    priceUsdElement.textContent = prices.usd ? `${prices.usd} $` : "—";
+                }
+                if (cardImgElement) {
+                    cardImgElement.src = imageUrl;
+                }
+            }
+            
+            onSuccess(printToSave);
+        } else {
+            throw new Error('Failed to fetch card data from Scryfall');
+        }
     } catch (error) {
         console.error("Error updating card set:", error);
         onError('Error updating card set');
