@@ -9,6 +9,7 @@ import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, d
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getConfig, validateConfig } from './config.js';
+import { getSortableField } from './searchFilter.js';
 
 setLogLevel('debug');
 
@@ -162,8 +163,6 @@ export function buildBaseCollectionQuery(userId, searchTerm = '', sortColumn = n
     baseConstraints.push(where('name', '>=', capitalizedSearchTerm));
     baseConstraints.push(where('name', '<=', capitalizedSearchTerm + '\uf8ff'));
   } else if (sortColumn) {
-    // Import getSortableField from searchFilter module
-    const { getSortableField } = require('./searchFilter.js');
     const field = getSortableField(sortColumn);
     baseConstraints.push(orderBy(field, sortDirection));
   } else {

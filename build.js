@@ -67,9 +67,8 @@ const copyRecursive = (src, dest) => {
     }
 };
 
-// Copy public files (excluding index.html which we already processed)
+// Copy public files directly to build directory (excluding index.html which we already processed)
 const publicDir = path.join(__dirname, 'public');
-const buildPublicDir = path.join(buildDir, 'public');
 
 if (fs.existsSync(publicDir)) {
     const entries = fs.readdirSync(publicDir, { withFileTypes: true });
@@ -77,14 +76,11 @@ if (fs.existsSync(publicDir)) {
     for (let entry of entries) {
         if (entry.name !== 'index.html') {
             const srcPath = path.join(publicDir, entry.name);
-            const destPath = path.join(buildPublicDir, entry.name);
+            const destPath = path.join(buildDir, entry.name);
             
             if (entry.isDirectory()) {
                 copyRecursive(srcPath, destPath);
             } else {
-                if (!fs.existsSync(buildPublicDir)) {
-                    fs.mkdirSync(buildPublicDir, { recursive: true });
-                }
                 fs.copyFileSync(srcPath, destPath);
             }
         }

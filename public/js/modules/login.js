@@ -134,11 +134,35 @@ function showApp() {
  * Initialize authentication check
  */
 export function initAuth() {
+    const loginOverlay = document.getElementById('loginOverlay');
+    const appContent = document.getElementById('app');
+    const loginForm = document.getElementById('loginForm');
+    const passwordInput = document.getElementById('passwordInput');
+    const loginError = document.getElementById('loginError');
+
     if (isAuthenticated()) {
-        // User is already authenticated, show app
-        showApp();
+        // User is already authenticated, hide login and show app
+        loginOverlay.classList.add('hidden');
+        appContent.classList.remove('hidden');
     } else {
-        // User needs to login, show login modal
-        showLoginModal();
+        // User needs to login, show login overlay
+        loginOverlay.classList.remove('hidden');
+        appContent.classList.add('hidden');
+    }
+
+    // Set up form submission handler
+    if (loginForm) {
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const password = passwordInput.value;
+            if (authenticate(password)) {
+                loginOverlay.classList.add('hidden');
+                appContent.classList.remove('hidden');
+                loginError.classList.add('hidden');
+            } else {
+                loginError.textContent = 'Invalid password. Please try again.';
+                loginError.classList.remove('hidden');
+            }
+        });
     }
 }
