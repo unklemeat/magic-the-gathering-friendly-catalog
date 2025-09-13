@@ -5,187 +5,253 @@ A modern, user-friendly web application for managing your Magic: The Gathering c
 I built this app because I wanted to organize my Magic collection and, at the same time, play around with Gemini PRO. My initial idea was just an app where I could scan/read a card name, add it to a list, and then pick the right expansion. The project kind of grew from there, and right now I’m trying to figure out how to host it on Firebase. Any tips or suggestions are more than welcome!
 Below you’ll find the detailed description (yeah, totally AI-generated — I didn’t even bother checking it because, let’s be honest, AIs are better than me at this anyway…).
 
-## Features
+# MGT Development Guide
 
-### 🔍 **Card Search & Management**
-- **Single Card Search**: Search for cards by name with fuzzy matching
-- **Voice Search**: Voice recognition support for hands-free card searching
-- **Real-time Pricing**: Get current EUR and USD prices from Scryfall
-- **Multiple Print Selection**: Choose between different printings of the same card
-- **Smart Card Detection**: Automatic handling of double-faced cards and variants
+## Project Overview
 
-### 📊 **Collection Management**
-- **Personal Collection**: Build and manage your card collection
-- **Advanced Filtering**: Filter by color, multicolor, colorless, and lands
-- **Sortable Tables**: Sort by name, set, price, or color
-- **Card Details**: View high-resolution images and oracle text
-- **Bulk Operations**: CSV import for large collections
+MGT (Magic: The Gathering) is a web application for managing Magic: The Gathering card collections and decks. The application uses Firebase for backend services and provides a modern, responsive interface for card search, collection management, and deck building.
 
-### 🎯 **Deck Builder**
-- **Multiple Decks**: Create and manage multiple deck lists
-- **Drag & Drop Interface**: Easy card management between collection and decks
-- **Real-time Sync**: Changes are automatically saved
-- **Search & Filter**: Quickly find cards in your collection
+## Codebase Structure
 
-### 🌐 **Multi-language Support**
-- **Italian & English**: Full interface translation
-- **Localized Card Names**: Display Italian card names when available
-- **Regional Pricing**: EUR and USD price display
+```
+mgt/
+├── src/                          # Server-side code
+│   └── server.js                 # Express server with environment injection
+├── public/                       # Client-side application
+│   ├── index.html               # Main HTML file
+│   ├── css/
+│   │   └── style.css            # Application styles
+│   └── js/
+│       ├── app.js               # Main application entry point
+│       └── modules/             # Modular JavaScript components
+│           ├── auth.js          # Authentication management
+│           ├── collectionManagement.js  # Collection CRUD operations
+│           ├── config.js        # Environment configuration loader
+│           ├── events.js        # Event handling and UI interactions
+│           ├── firebase.js      # Firebase initialization and services
+│           ├── login.js         # Login/logout functionality
+│           ├── scryfallApi.js   # Scryfall API integration
+│           ├── searchFilter.js  # Card search and filtering
+│           ├── state.js         # Application state management
+│           ├── translations.js  # Internationalization
+│           └── ui.js            # UI utilities and helpers
+├── build/                       # Built files for deployment (auto-generated)
+├── tests/                       # Unit tests
+│   ├── collectionManagement.test.js
+│   ├── scryfallApi.test.js
+│   ├── searchFilter.test.js
+│   └── translations.test.js
+├── e2e/                         # End-to-end tests
+│   ├── collection.spec.js
+│   ├── decks.spec.js
+│   ├── search.spec.js
+│   └── smoke.spec.js
+├── build.js                     # Build script for static hosting
+├── firebase.json               # Firebase hosting configuration
+├── env.example                 # Environment variables template
+└── package.json                # Dependencies and scripts
+```
 
-### 📱 **Modern Interface**
-- **Responsive Design**: Works on desktop, tablet, and mobile
-- **Dark Theme**: Card detail modals with dark theme
-- **Smooth Animations**: Modern transitions and hover effects
-- **Progressive Loading**: Efficient data loading with progress indicators
+## Environment Configuration
 
-## Technical Stack
+### Setting Up Environment Variables
 
-- **Frontend**: Vanilla JavaScript, HTML5, CSS3
-- **Styling**: Tailwind CSS
-- **Database**: Firebase Firestore
-- **Authentication**: Firebase Anonymous Auth
-- **API**: Scryfall Magic: The Gathering API
-- **Storage**: Real-time cloud synchronization
+1. **Copy the environment template:**
+   ```bash
+   cp env.example .env
+   ```
 
-## Setup Instructions
+2. **Configure your Firebase project:**
+   - Go to [Firebase Console](https://console.firebase.google.com/)
+   - Create a new project or select existing one
+   - Go to Project Settings → General → Your apps
+   - Add a web app and copy the configuration values
+
+3. **Fill in your `.env` file:**
+   ```env
+   # Firebase Project Configuration
+   FIREBASE_API_KEY=your_actual_api_key
+   FIREBASE_AUTH_DOMAIN=your-project-id.firebaseapp.com
+   FIREBASE_PROJECT_ID=your-project-id
+   FIREBASE_STORAGE_BUCKET=your-project-id.firebasestorage.app
+   FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+   FIREBASE_APP_ID=your_app_id
+   FIREBASE_MEASUREMENT_ID=your_measurement_id
+
+   # App Configuration
+   APP_ID=your-app-identifier
+
+   # Simple Password Authentication (for sharing with friends)
+   SHARE_PASSWORD=your_secure_password
+   ```
+
+4. **Important Security Notes:**
+   - ⚠️ **NEVER commit `.env` to version control**
+   - The `.env` file is already in `.gitignore`
+   - Firebase API keys are safe to expose in client-side code
+   - The `SHARE_PASSWORD` is used for simple authentication
+
+## Development Environment
+
+### Auto-Reloading Development Setup
+
+This project includes an auto-reloading development environment that will:
+- Automatically restart the server when you change server-side code
+- Automatically refresh the browser when you change client-side code (HTML, CSS, JS)
+
+### Available Scripts
+
+- `npm run dev` - Start the server with nodemon (server auto-restart only)
+- `npm run dev:live` - Start both server and browser-sync (full auto-reloading)
+- `npm start` - Start the server normally (no auto-reloading)
+- `npm test` - Run unit tests
+- `npm run test:watch` - Run tests in watch mode
+- `npm run test:e2e` - Run end-to-end tests
+- `npm run test:e2e:ui` - Run E2E tests with UI
+- `npm run test:all` - Run both unit and E2E tests
+
+### How to Use
+
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Set up environment variables** (see Environment Configuration above)
+
+3. **Start the development environment:**
+   ```bash
+   npm run dev:live
+   ```
+
+4. **The browser will automatically open** to `http://localhost:3000`
+
+5. **Make changes to your code:**
+   - Server changes (in `src/`): Server will restart automatically
+   - Client changes (in `public/`): Browser will refresh automatically
+
+6. **Stop the development environment:**
+   - Press `Ctrl+C` in the terminal
+
+### Configuration Files
+
+- `bs-config.js` - Browser-sync configuration
+- `nodemon.json` - Nodemon configuration for server watching
+- `.babelrc` - Babel configuration for JavaScript transpilation
+- `jest.config.js` - Jest testing configuration
+- `playwright.config.js` - Playwright E2E testing configuration
+
+### What Gets Watched
+
+- **Server files**: `src/**/*.js`
+- **Client files**: `public/**/*.html`, `public/**/*.css`, `public/**/*.js`
+- **Ignored**: `node_modules/`, `tests/`, `*.test.js`, `build/`, `test-results/`, `playwright-report/`
+
+### Troubleshooting
+
+If the browser doesn't open automatically, manually navigate to:
+- **Browser-sync (recommended)**: `http://localhost:3000` (with auto-reload, proxies to Express server)
+- **Express server (direct)**: `http://localhost:3001` (direct server access, no auto-reload)
+
+### Architecture
+
+- **Express server** runs on port 3001 and serves the application
+- **Browser-sync** runs on port 3000 and proxies requests to the Express server
+- **Browser-sync UI** runs on port 3002 (for configuration and debugging)
+- **Auto-reload** works by browser-sync watching file changes and refreshing the browser
+
+## Deployment to Firebase
 
 ### Prerequisites
-- A modern web browser with JavaScript enabled
-- Firebase project (for data persistence)
-- Internet connection (for Scryfall API access)
 
-### Configuration
-
-1. **Firebase Setup**:
-   ```javascript
-   // Configure your Firebase project
-   const firebaseConfig = {
-     apiKey: "your-api-key",
-     authDomain: "your-project.firebaseapp.com",
-     projectId: "your-project-id",
-     // ... other config
-   };
+1. **Install Firebase CLI:**
+   ```bash
+   npm install -g firebase-tools
    ```
 
-2. **Database Structure**:
-   The application uses the following Firestore structure:
-   ```
-   artifacts/
-     └── {appId}/
-         └── users/
-             └── {userId}/
-                 ├── collection/
-                 │   └── {cardId} (card data)
-                 └── decks/
-                     └── {deckId}
-                         ├── name
-                         └── cards[]
+2. **Login to Firebase:**
+   ```bash
+   firebase login
    ```
 
-### Local Development
+3. **Initialize Firebase project** (if not already done):
+   ```bash
+   firebase init hosting
+   ```
 
-1. Clone or download the application files
-2. Configure Firebase credentials in the JavaScript
-3. Open `mgt-catalog.html` in a modern web browser
-4. The application will automatically connect to Scryfall API
+### Deployment Process
 
-## Usage Guide
+#### Option 1: Quick Deploy (Recommended)
+```bash
+npm run build:firebase
+```
+This command will:
+1. Build the application (`npm run build`)
+2. Deploy to Firebase (`firebase deploy`)
 
-### Adding Cards
+#### Option 2: Manual Deploy
+```bash
+# 1. Build the application
+npm run build
 
-1. **Single Card Search**:
-   - Enter card name in the search field
-   - Use voice search button for speech recognition
-   - Select from multiple printings if available
-   - Card automatically added to collection
+# 2. Deploy to Firebase
+firebase deploy
+```
 
-2. **CSV Import**:
-   - Prepare CSV with format: `CardName;SetCode`
-   - Upload via the CSV tab
-   - Process automatically adds all found cards
+### Build Process
 
-3. **Set Exploration**:
-   - Browse entire Magic sets
-   - Click cards to view details and add to collection
+The build process (`build.js`) does the following:
 
-### Managing Collection
+1. **Reads environment variables** from `.env` file
+2. **Injects configuration** into the HTML file at build time
+3. **Copies all static files** from `public/` to `build/` directory
+4. **Creates a production-ready** static site in the `build/` folder
 
-- **Filter by Color**: Use color checkboxes to filter your collection
-- **Sort Data**: Click column headers to sort by different criteria
-- **Remove Cards**: Use delete button to remove cards from collection
-- **Export Data**: Save your collection as JSON for backup
+### Firebase Hosting Configuration
 
-### Building Decks
+The `firebase.json` file configures:
+- **Public directory**: `build/` (where built files are served from)
+- **Headers**: Proper MIME types for JS and CSS files
+- **Ignore patterns**: Excludes development files from deployment
 
-1. Create a new deck from the Decks tab
-2. Enter deck editor by clicking on a deck
-3. Add cards from your collection by clicking on them
-4. Remove cards from deck using the remove button
-5. Deck changes are automatically saved
+### Environment Variables in Production
 
-## API Rate Limiting
+- **Development**: Environment variables are injected by the Express server
+- **Production**: Environment variables are injected at build time into static files
+- **Security**: Firebase API keys are safe to expose in client-side code
 
-The application respects Scryfall's API rate limits:
-- Maximum 10 requests per second
-- Built-in request queuing system
-- Automatic retry logic for failed requests
+### Deployment Checklist
 
-## Browser Compatibility
+Before deploying:
 
-- **Recommended**: Chrome, Firefox, Safari, Edge (latest versions)
-- **Voice Search**: Webkit-based browsers (Chrome, Safari, Edge)
-- **Required Features**: ES6+ support, Fetch API, CSS Grid
+1. ✅ **Environment variables configured** in `.env`
+2. ✅ **Firebase project set up** and configured
+3. ✅ **All tests passing**: `npm run test:all`
+4. ✅ **Build successful**: `npm run build`
+5. ✅ **Firebase CLI authenticated**: `firebase login`
 
-## Data Privacy
+### Post-Deployment
 
-- **Anonymous Authentication**: No personal data required
-- **Local Storage**: All data stored in your Firebase project
-- **No Tracking**: No analytics or user tracking implemented
-- **Offline Capability**: Basic functionality works without internet (cached data)
+After successful deployment:
+- Your app will be available at: `https://your-project-id.web.app`
+- Check Firebase Console for deployment status
+- Monitor Firebase Analytics for usage data
 
-## Troubleshooting
+### Troubleshooting Deployment
 
-### Common Issues
+**Build fails:**
+- Check that all environment variables are set in `.env`
+- Ensure `public/index.html` exists and is valid
 
-1. **API Connection Errors**:
-   - Check internet connection
-   - Refresh the page to retry Scryfall connection
-   - Check browser console for detailed error messages
+**Deploy fails:**
+- Verify Firebase CLI is logged in: `firebase login`
+- Check Firebase project ID in `.firebaserc`
+- Ensure Firebase project has hosting enabled
 
-2. **Cards Not Found**:
-   - Try different spellings or use English names
-   - Check if the card exists on Scryfall
-   - Use fuzzy search by entering partial names
-
-3. **Voice Search Not Working**:
-   - Ensure microphone permissions are granted
-   - Use a supported browser (Chrome)
-   - Check that microphone is working in other applications
-
-4. **Data Not Syncing**:
-   - Verify Firebase configuration
-   - Check internet connection
-   - Ensure proper authentication
-
-## Contributing
-
-This is a single-file application designed for easy customization:
-
-- **Translations**: Edit the `translations` object for new languages
-- **Styling**: Modify Tailwind classes or add custom CSS
-- **Features**: Add new functionality in the modular JavaScript structure
-- **API Integration**: Extend with other Magic: The Gathering APIs
-
-## License
-
-This project is provided as-is for educational and personal use. Scryfall API usage is subject to their terms of service.
-
-## Acknowledgments
-
-- **Scryfall**: For providing the excellent Magic: The Gathering API
-- **Wizards of the Coast**: For Magic: The Gathering
-- **Tailwind CSS**: For the utility-first CSS framework
-- **Firebase**: For real-time database and authentication services
+**App doesn't work after deployment:**
+- Check browser console for errors
+- Verify Firebase configuration in built files
+- Check Firebase project settings and API keys
 
 ---
 
