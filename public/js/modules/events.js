@@ -9,6 +9,8 @@ export function setupEventListeners(handlers) {
     const micIcon = document.getElementById('mic-icon');
     const micUnsupportedIcon = document.getElementById('mic-unsupported-icon');
 
+    let isListening = false; // Definisci lo stato di ascolto
+
     const startVoiceSearch = setupVoiceSearch(
         (transcript) => {
             if (transcript) {
@@ -22,17 +24,17 @@ export function setupEventListeners(handlers) {
             if (handlers.onVoiceSearchError) {
                 handlers.onVoiceSearchError(errorKey);
             }
+        },
+        // Questa è la nuova funzione che viene chiamata alla fine
+        () => {
+            isListening = false;
+            micIcon.classList.remove('text-green-500', 'mic-listening');
         }
     );
 
     if (startVoiceSearch) {
-        let isListening = false;
-        
         voiceSearchBtn.addEventListener('click', () => {
-            if (isListening) {
-                isListening = false;
-                micIcon.classList.remove('text-green-500', 'mic-listening');
-            } else {
+            if (!isListening) {
                 startVoiceSearch();
                 isListening = true;
                 micIcon.classList.add('text-green-500', 'mic-listening');
@@ -107,13 +109,6 @@ export function setupEventListeners(handlers) {
 
     document.getElementById('closeDetailsModalBtn').addEventListener('click', () => {
         document.getElementById('cardDetailsModal').classList.add('hidden');
-    });
-
-    // CSV processing
-    document.getElementById('processCsv').addEventListener('click', () => {
-        if (handlers.onProcessCsv) {
-            handlers.onProcessCsv();
-        }
     });
 
     // JSON export/import

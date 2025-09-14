@@ -229,8 +229,10 @@ export async function getAllCollectionCards(userId) {
   if (!db || !userId) return [];
   
   try {
-    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`), orderBy('name')));
-    return collectionSnapshot.docs.map(d => ({ id: d.id, result: d.data() }));
+    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`)));
+    const cards = collectionSnapshot.docs.map(d => ({ id: d.id, result: d.data() }));
+    cards.sort((a, b) => (a.result.name || '').localeCompare(b.result.name || ''));
+    return cards;
   } catch (error) {
     console.error("Error fetching all collection cards:", error);
     return [];
@@ -329,10 +331,12 @@ export async function deleteDeck(userId, deckId) {
  */
 export async function addCardToDeck(userId, deckId, cardData, currentCards = []) {
   if (!db || !userId) return false;
-  
+
   try {
     const deckDocRef = doc(db, `artifacts/${appId}/users/${userId}/decks`, deckId);
-    const updatedCards = [...currentCards, cardData];
+    // Assicura che currentCards sia sempre un array
+    const existingCards = Array.isArray(currentCards) ? currentCards : [];
+    const updatedCards = [...existingCards, cardData];
     await updateDoc(deckDocRef, { cards: updatedCards });
     return true;
   } catch (error) {
@@ -468,6 +472,40 @@ export function getFirebaseInstances() {
  */
 export function isFirebaseInitialized() {
   return !!(app && db && auth);
+}
+
+/**
+ * Import collection from JSON data
+ * @param {string} userId - User ID
+ * @param {Array} collectionData - Array of card data
+ * @returns {Promise<boolean>} Success status
+ */
+export async function importCollection(userId, collectionData) {
+  if (!db || !userId || !Array.isArray(collectionData)) return false;
+  
+  try {
+    const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+
+    // Clear existing collection
+    const existingDocsSnapshot = await getDocs(collectionRef);
+    const deletePromises = existingDocsSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
+    await Promise.all(deletePromises);
+
+    // Add new cards from the imported file
+    const addPromises = collectionData.map(cardObject => {
+      // The file saves the card data inside a "result" object
+      if (cardObject.result) {
+        return addDoc(collectionRef, cardObject.result);
+      }
+      return null;
+    }).filter(p => p); // Filter out any null promises
+    await Promise.all(addPromises);
+
+    return true;
+  } catch (error) {
+    console.error("Error importing collection:", error);
+    return false;
+  }
 }
 
 // Re-export Firestore functions for use in other modules

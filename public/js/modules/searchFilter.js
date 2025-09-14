@@ -328,39 +328,6 @@ export function handleSortChange(column, currentSort, onSortChange) {
 }
 
 /**
- * Process CSV data for import
- * @param {string} csvData - CSV data as string
- * @param {Function} onProcessComplete - Callback when processing is complete
- * @param {Function} onError - Callback for errors
- */
-export function processCsvData(csvData, onProcessComplete, onError) {
-    try {
-        const lines = csvData.split('\n');
-        const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
-        
-        const data = [];
-        for (let i = 1; i < lines.length; i++) {
-            const line = lines[i].trim();
-            if (!line) continue;
-            
-            const values = line.split(',').map(v => v.trim());
-            const row = {};
-            
-            headers.forEach((header, index) => {
-                row[header] = values[index] || '';
-            });
-            
-            data.push(row);
-        }
-        
-        onProcessComplete(data);
-    } catch (error) {
-        console.error('CSV processing error:', error);
-        onError('modalCsvError');
-    }
-}
-
-/**
  * Process JSON data for import
  * @param {string} jsonData - JSON data as string
  * @param {Function} onProcessComplete - Callback when processing is complete
@@ -418,9 +385,10 @@ export function exportToJson(data, filename, onExportComplete, onError) {
  * Handle voice search
  * @param {Function} onVoiceResult - Callback when voice result is received
  * @param {Function} onVoiceError - Callback for voice errors
+ * @param {Function} onVoiceEnd - Callback when voice recognition ends
  * @returns {Function} Function to start voice recognition
  */
-export function setupVoiceSearch(onVoiceResult, onVoiceError) {
+export function setupVoiceSearch(onVoiceResult, onVoiceError, onVoiceEnd) {
     if (!('webkitSpeechRecognition' in window)) {
         return null;
     }
@@ -438,6 +406,13 @@ export function setupVoiceSearch(onVoiceResult, onVoiceError) {
     recognition.onerror = (event) => {
         console.error('Voice recognition error:', event.error);
         onVoiceError('modalSpeechError');
+    };
+    
+    // Aggiungi questo gestore per reimpostare l'icona
+    recognition.onend = () => {
+        if (onVoiceEnd) {
+            onVoiceEnd();
+        }
     };
     
     return () => {
