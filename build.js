@@ -1,17 +1,28 @@
 /**
  * Build script for static hosting
  * Injects environment variables at build time
+ * and ensures a clean build directory.
  */
 
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-// Read the HTML file
-const indexPath = path.join(__dirname, 'public/index.html');
+const buildDir = path.join(__dirname, 'build');
+const publicDir = path.join(__dirname, 'public');
+
+// --- 1. Clean the build directory ---
+if (fs.existsSync(buildDir)) {
+    fs.rmSync(buildDir, { recursive: true, force: true });
+}
+fs.mkdirSync(buildDir);
+
+console.log('🧹 Cleaned build directory.');
+
+// --- 2. Process and inject config into index.html ---
+const indexPath = path.join(publicDir, 'index.html');
 let html = fs.readFileSync(indexPath, 'utf8');
 
-// Create configuration object
 const config = {
     firebase: {
         apiKey: process.env.FIREBASE_API_KEY || '',
@@ -30,24 +41,18 @@ const config = {
     }
 };
 
-// Inject config before closing head tag
 const configScript = `
     <script>
         window.__APP_CONFIG__ = ${JSON.stringify(config)};
     </script>
-    `;
+`;
 
 html = html.replace('</head>', `${configScript}</head>`);
-
-// Write the built HTML file
-const buildDir = path.join(__dirname, 'build');
-if (!fs.existsSync(buildDir)) {
-    fs.mkdirSync(buildDir);
-}
-
 fs.writeFileSync(path.join(buildDir, 'index.html'), html);
 
-// Copy all static files to build directory
+console.log('📄 Processed index.html.');
+
+// --- 3. Copy all other static files from public to build ---
 const copyRecursive = (src, dest) => {
     if (!fs.existsSync(dest)) {
         fs.mkdirSync(dest, { recursive: true });
@@ -67,26 +72,22 @@ const copyRecursive = (src, dest) => {
     }
 };
 
-// Copy public files directly to build directory (excluding index.html which we already processed)
-const publicDir = path.join(__dirname, 'public');
+const entries = fs.readdirSync(publicDir, { withFileTypes: true });
 
-if (fs.existsSync(publicDir)) {
-    const entries = fs.readdirSync(publicDir, { withFileTypes: true });
-    
-    for (let entry of entries) {
-        if (entry.name !== 'index.html') {
-            const srcPath = path.join(publicDir, entry.name);
-            const destPath = path.join(buildDir, entry.name);
-            
-            if (entry.isDirectory()) {
-                copyRecursive(srcPath, destPath);
-            } else {
-                fs.copyFileSync(srcPath, destPath);
-            }
+for (let entry of entries) {
+    if (entry.name !== 'index.html') {
+        const srcPath = path.join(publicDir, entry.name);
+        const destPath = path.join(buildDir, entry.name);
+        
+        if (entry.isDirectory()) {
+            copyRecursive(srcPath, destPath);
+        } else {
+            fs.copyFileSync(srcPath, destPath);
         }
     }
 }
 
-console.log('✅ Build completed successfully!');
+console.log('🎨 Copied static assets.');
+console.log('\n✅ Build completed successfully!');
 console.log('📁 Built files are in the "build" directory');
 console.log('🔐 Environment variables injected at build time');
