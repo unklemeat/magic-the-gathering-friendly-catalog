@@ -2,7 +2,7 @@
 
 A modern, user-friendly web application for managing your Magic: The Gathering card collection with real-time pricing data from Scryfall API.
 
-I built this app because I wanted to organize my Magic collection and, at the same time, play around with Gemini PRO. My initial idea was just an app where I could scan/read a card name, add it to a list, and then pick the right expansion. The project kind of grew from there, and right now I’m trying to figure out how to host it on Firebase. Any tips or suggestions are more than welcome!
+I built this app because I wanted to organize my Magic collection and, at the same time, play around with Gemini PRO. My initial idea was just an app where I could scan/read a card name, add it to a list, and then pick the right expansion. The project kind of grew from there, and then I figure out how to host it on Firebase. Any tips or suggestions are more than welcome!
 Below you’ll find the detailed description (yeah, totally AI-generated — I didn’t even bother checking it because, let’s be honest, AIs are better than me at this anyway…).
 
 # Development Guide
