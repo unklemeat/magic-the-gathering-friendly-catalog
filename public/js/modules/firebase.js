@@ -157,7 +157,7 @@ export async function removeCardFromCollection(userId, collectionId, cardId) {
  */
 export function buildBaseCollectionQuery(userId, collectionId, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
   if (!db || !userId || !collectionId) return null;
-  
+
   let q = collection(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`);
   let baseConstraints = [];
 
@@ -166,11 +166,14 @@ export function buildBaseCollectionQuery(userId, collectionId, searchTerm = '', 
     baseConstraints.push(orderBy('name'));
     baseConstraints.push(where('name', '>=', capitalizedSearchTerm));
     baseConstraints.push(where('name', '<=', capitalizedSearchTerm + '\uf8ff'));
-  } else if (sortColumn) {
-    const field = getSortableField(sortColumn);
-    baseConstraints.push(orderBy(field, sortDirection));
   } else {
-    baseConstraints.push(orderBy('name'));
+    // Se non c'è ricerca, usa l'ordinamento specificato
+    const sortField = getSortableField(sortColumn);
+    
+    // **LA CORREZIONE È QUI**
+    // Applichiamo solo l'ordinamento primario. Questo evita la necessità di indici compositi
+    // su Firestore, che erano la causa della sparizione delle carte.
+    baseConstraints.push(orderBy(sortField, sortDirection));
   }
 
   return query(q, ...baseConstraints);
@@ -189,15 +192,18 @@ export function buildBaseCollectionQuery(userId, collectionId, searchTerm = '', 
 export async function fetchCollectionPage(userId, collectionId, direction = 'first', cardsPerPage = 50, pageFirstDocs = [null], lastVisible = null, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
   if (!db || !collectionId) return { cards: [], hasMore: false, lastVisible: null };
   
-  let baseQuery = buildBaseCollectionQuery(userId, collectionId, searchTerm, sortColumn, sortDirection);
+  const baseQuery = buildBaseCollectionQuery(userId, collectionId, searchTerm, sortColumn, sortDirection);
+  if (!baseQuery) return { cards: [], hasMore: false, lastVisible: null };
+
   let pageQuery;
 
+  // La logica di paginazione rimane la stessa
   if (direction === 'first') {
     pageQuery = query(baseQuery, limit(cardsPerPage));
   } else if (direction === 'next' && lastVisible) {
     pageQuery = query(baseQuery, startAfter(lastVisible), limit(cardsPerPage));
   } else if (direction === 'prev' && pageFirstDocs.length > 1) {
-    const prevPageFirstDoc = pageFirstDocs[pageFirstDocs.length - 2];
+    const prevPageFirstDoc = pageFirstDocs[pageFirstDocs.length - 2] || null;
     if (prevPageFirstDoc) {
       pageQuery = query(baseQuery, startAfter(prevPageFirstDoc), limit(cardsPerPage));
     } else {
@@ -210,14 +216,14 @@ export async function fetchCollectionPage(userId, collectionId, direction = 'fir
   try {
     const snapshot = await getDocs(pageQuery);
     const cards = snapshot.docs.map(doc => ({ id: doc.id, result: doc.data() }));
-    const newLastVisible = snapshot.docs[snapshot.docs.length - 1] || null;
+    const newLastVisible = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1] : null;
     const hasMore = snapshot.docs.length === cardsPerPage;
 
     return {
       cards,
       hasMore,
       lastVisible: newLastVisible,
-      firstVisible: snapshot.docs[0] || null
+      firstVisible: snapshot.docs.length > 0 ? snapshot.docs[0] : null
     };
   } catch (error) {
     console.error("Error fetching collection page:", error);

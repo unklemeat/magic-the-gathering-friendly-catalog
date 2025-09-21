@@ -107,12 +107,30 @@ export function addRow(data, uniqueId, onSetChange, onDelete, activeLang = 'ita'
     const tableBody = document.querySelector('#resultsTable tbody');
     const newRow = document.createElement('tr');
     newRow.className = 'hover:bg-gray-50';
-    const cardName = data.printed_name || data.name;
+    
+    const englishName = data.name;
+    const localizedName = data.printed_name;
+    
+    // Mostra sempre il nome inglese e, se diverso, il nome localizzato (italiano) sotto.
+    const nameHtml = (localizedName && localizedName !== englishName) 
+        ? `<div>${englishName}</div><div class="text-xs text-gray-500">${localizedName}</div>`
+        : `<div>${englishName}</div>`;
+
     const imageUrl = data.image_uris?.small || `https://placehold.co/74x104/E5E7EB/9CA3AF?text=N/A`;
     const prices = data.prices;
     const colorSymbols = (data.colors?.length > 0) ? data.colors.map(c => `<span class="color-symbol color-${c.toLowerCase()}"></span>`).join('') : '<span class="color-symbol color-c"></span>';
     
-    newRow.innerHTML = `<td class="px-4 py-2 text-center text-sm text-gray-600"></td><td class="px-4 py-2 text-center"><img src="${imageUrl}" alt="${cardName}" class="card-img w-14 h-auto rounded-md mx-auto"></td><td class="px-4 py-2 font-medium text-gray-900"><div>${cardName}</div><div class="text-xs text-gray-500">${data.set_name}</div></td><td class="px-4 py-2 text-sm text-gray-600 text-center">${data.rarity} ${colorSymbols}</td><td class="px-4 py-2 text-center"><select class="set-select border border-gray-300 rounded px-2 py-1 text-sm bg-white w-40"><option value="${data.id}">${data.set_name}</option></select></td><td class="px-4 py-2 text-center text-sm font-semibold text-gray-800 price-eur">${prices.eur ? `${prices.eur} €` : "—"}</td><td class="px-4 py-2 text-center text-sm font-semibold text-gray-800 price-usd">${prices.usd ? `${prices.usd} $` : "—"}</td><td class="px-4 py-2 text-center"><button class="details-btn bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm">${getTranslation('tableColDetails', activeLang)}</button></td><td class="px-4 py-2 text-center"><button class="delete-btn bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">${getTranslation('tableColAction', activeLang)}</button></td>`;
+    newRow.innerHTML = `
+        <td class="px-4 py-2 text-center text-sm text-gray-600"></td>
+        <td class="px-4 py-2 text-center"><img src="${imageUrl}" alt="${englishName}" class="card-img w-14 h-auto rounded-md mx-auto"></td>
+        <td class="px-4 py-2 font-medium text-gray-900">${nameHtml}</td>
+        <td class="px-4 py-2 text-sm text-gray-600 text-center">${data.rarity} ${colorSymbols}</td>
+        <td class="px-4 py-2 text-center"><select class="set-select border border-gray-300 rounded px-2 py-1 text-sm bg-white w-40"><option value="${data.id}">${data.set_name}</option></select></td>
+        <td class="px-4 py-2 text-center text-sm font-semibold text-gray-800 price-eur">${prices.eur ? `${prices.eur} €` : "—"}</td>
+        <td class="px-4 py-2 text-center text-sm font-semibold text-gray-800 price-usd">${prices.usd ? `${prices.usd} $` : "—"}</td>
+        <td class="px-4 py-2 text-center"><button class="details-btn bg-blue-500 hover:bg-blue-600 text-white px-3 py-1 rounded text-sm">${getTranslation('tableColDetails', activeLang)}</button></td>
+        <td class="px-4 py-2 text-center"><button class="delete-btn bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-sm">${getTranslation('tableColAction', activeLang)}</button></td>
+    `;
     
     tableBody.appendChild(newRow);
     
@@ -148,7 +166,6 @@ export function addRow(data, uniqueId, onSetChange, onDelete, activeLang = 'ita'
     
     selectEl.addEventListener('change', (e) => onSetChange(e, uniqueId));
     newRow.querySelector('.delete-btn').addEventListener('click', () => onDelete(uniqueId));
-    // Modifica: usa onclick per poterlo sovrascrivere facilmente
     newRow.querySelector('.details-btn').onclick = () => showCardDetailsModal(data, () => {}, false);
 }
 
@@ -167,12 +184,17 @@ export function renderTable(searchResults, activeFilters, activeLang, onSetChang
     });
 }
 
-export function updatePaginationUI(fetchedCount, currentPage, activeLang) {
+export function updatePaginationUI(fetchedCount, currentPage, activeLang, hasMore) {
     const pageSize = parseInt(document.getElementById('pageSizeSelect').value, 10);
     document.getElementById('prevPageBtn').disabled = currentPage === 1;
-    document.getElementById('nextPageBtn').disabled = fetchedCount < pageSize;
+    
+    // Usa hasMore se è definito, altrimenti calcola in base al numero di carte
+    const shouldDisableNext = hasMore === undefined ? fetchedCount < pageSize : !hasMore;
+    document.getElementById('nextPageBtn').disabled = shouldDisableNext;
+    
     document.getElementById('pageInfo').textContent = getTranslation('pageInfoText', activeLang, { '{currentPage}': currentPage });
 }
+
 
 export async function calculateAndDisplayTotalValue(collectionData) {
     let totalEur = 0, totalUsd = 0;

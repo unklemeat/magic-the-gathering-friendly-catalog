@@ -87,15 +87,33 @@ export async function fetchAllPrintsByOracleId(oracleId) {
 }
 
 /**
- * Search for cards by name with exact matching
+ * Search for cards by name with exact matching, forcing English language.
+ * This provides a stable baseline card object.
  * @param {string} cardName - The name of the card to search for
- * @param {string} language - The language code (e.g., 'ita', 'eng')
  * @returns {Promise<Object|null>} The search result or null if not found
  */
-export async function searchCardsExact(cardName, language = 'ita') {
-  const exactSearchUrl = `${SCRYFALL_API}/cards/search?q="${encodeURIComponent(cardName)}"+lang%3A${language}`;
+export async function searchCardsExact(cardName) {
+  const exactSearchUrl = `${SCRYFALL_API}/cards/search?q=!"${encodeURIComponent(cardName)}"+lang%3Aen&unique=cards`;
   return await rateLimitedRequest(exactSearchUrl);
 }
+
+/**
+ * Search for a specific Italian print of a card by its Oracle ID.
+ * @param {string} oracleId - The Oracle ID of the card.
+ * @returns {Promise<Object|null>} The Italian card data or null if not found.
+ */
+export async function fetchItalianVersion(oracleId) {
+    if (!oracleId) return null;
+    const italianSearchUrl = `${SCRYFALL_API}/cards/search?q=oracleid%3A${oracleId}+lang%3Ait&unique=cards`;
+    const result = await rateLimitedRequest(italianSearchUrl);
+    
+    if (result && result.data && result.data.length > 0) {
+        // Return the first available Italian version
+        return result.data[0];
+    }
+    return null;
+}
+
 
 /**
  * Search for a card by name using fuzzy matching
@@ -147,6 +165,7 @@ export async function fetchSetCards(setCode) {
  * @returns {string} The normalized name
  */
 export function normalizeName(name) {
+  if (!name) return '';
   return name.toLowerCase()
     .replace(/[àáâãäå]/g, 'a')
     .replace(/[èéêë]/g, 'e')

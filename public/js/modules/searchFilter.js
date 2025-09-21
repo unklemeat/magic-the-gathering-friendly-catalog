@@ -22,13 +22,12 @@ import {
 export async function findCardAndHandleResults(cardName, activeLang, onCardFound, onMultipleCardsFound, onCardNotFound) {
     const formattedName = cardName.trim();
     
-    // Step 1: Strict search for exact match
-    const exactResult = await searchCardsExact(formattedName, activeLang);
+    // Step 1: Strict search for exact match (now always in English)
+    const exactResult = await searchCardsExact(formattedName);
 
     if (exactResult && exactResult.data && exactResult.data.length > 0) {
         const exactMatches = exactResult.data.filter(card => 
-            normalizeName(card.name) === normalizeName(formattedName) || 
-            (card.printed_name && normalizeName(card.printed_name) === normalizeName(formattedName))
+            normalizeName(card.name) === normalizeName(formattedName)
         );
         
         if (exactMatches.length === 1) {
@@ -58,18 +57,21 @@ export async function findCardAndHandleResults(cardName, activeLang, onCardFound
 }
 
 /**
- * Get the sortable field name for a given column
+ * Get the sortable field name for a given column.
+ * This is corrected to use reliable fields present on all documents.
  * @param {string} column - Column identifier
  * @returns {string} Field name for sorting
  */
 export function getSortableField(column) {
     switch (column) {
-        case 'ita-name': return 'printed_name';
-        case 'eng-name': return 'name';
+        // CORRECTION: 'ita-name' now correctly sorts by the 'name' field,
+        // which is guaranteed to exist. The display logic handles showing the Italian name.
+        case 'ita-name': return 'name';
         case 'set': return 'set_name';
         case 'eur-price': return 'prices.eur';
         case 'usd-price': return 'prices.usd';
-        // Note: Sorting by color is complex with Firestore and is not implemented server-side.
+        // 'color' is not a sortable field in Firestore, so we default to name.
+        case 'color': return 'name';
         default: return 'name'; // Default sort field
     }
 }

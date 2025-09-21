@@ -10,8 +10,6 @@ import {
   addCardToCollection as firebaseAddCardToCollection,
   updateCardInCollection,
   removeCardFromCollection,
-  addCardToDeck as firebaseAddCardToDeck,
-  removeCardFromDeck as firebaseRemoveCardFromDeck,
   removeCardFromAllDecksByOracleId as firebaseRemoveCardFromAllDecksByOracleId
 } from './firebase.js';
 import { fetchCardById } from './scryfallApi.js';
@@ -19,16 +17,14 @@ import {
   renderTable,
   updatePaginationUI,
   calculateAndDisplayTotalValue as uiCalculateAndDisplayTotalValue,
-  renderCollectionCards as uiRenderCollectionCards,
   toggleProgress,
-  updateProgressText,
   showModal,
   showDeleteConfirmModal,
   showCardDetailsModal
 } from './ui.js';
 import { 
-  processJsonData,
-  exportToJson
+  getSortableField,
+  sortCards
 } from './searchFilter.js';
 
 /**
@@ -74,77 +70,126 @@ export async function deleteCardFromCollection(cardId, userId, collectionId, onS
 }
 
 /**
- * Fetch and render a page of the collection
- * @param {string} direction - Direction for pagination ('first', 'next', 'prev')
- * @param {string} userId - User ID
- * @param {string} collectionId - The ID of the collection
- * @param {number} cardsPerPage - Number of cards per page
- * @param {Array} pageFirstDocs - Array of first documents for each page
- * @param {Object} lastVisible - Last visible document for pagination
- * @param {number} currentPage - Current page number
- * @param {Array} activeFilters - Active color filters
- * @param {string} activeLang - Current language
- * @param {Function} onSuccess - Callback for successful fetch
- * @param {Function} onError - Callback for errors
- * @returns {Object} Updated pagination state
+ * Fetch and render a page of the collection.
+ * Now handles client-side searching for better flexibility.
  */
 export async function fetchAndRenderCollectionPage(direction, userId, collectionId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError, appId = null, decks = [], searchResults = [], searchTerm = '', sortColumn = null, sortDirection = 'asc') {
     toggleProgress(true);
-    
+
     try {
-        const pageData = await fetchCollectionPage(userId, collectionId, direction, cardsPerPage, pageFirstDocs, lastVisible, searchTerm, sortColumn, sortDirection);
-        
-        let newCurrentPage = currentPage;
-        let newPageFirstDocs = [...pageFirstDocs];
-        let newLastVisible = lastVisible;
-        let newFirstVisible = null;
-        
-        if (pageData.cards.length > 0) {
+        // --- NUOVA LOGICA DI RICERCA CLIENT-SIDE ---
+        if (searchTerm) {
+            const allCards = await getAllCollectionCards(userId, collectionId);
+            
+            const lowerCaseSearchTerm = searchTerm.toLowerCase();
+            let filteredCards = allCards.filter(card => {
+                const englishName = card.result.name.toLowerCase();
+                const italianName = card.result.printed_name ? card.result.printed_name.toLowerCase() : '';
+                return englishName.includes(lowerCaseSearchTerm) || italianName.includes(lowerCaseSearchTerm);
+            });
+
+            const sortField = getSortableField(sortColumn);
+            filteredCards = sortCards(filteredCards, sortField, sortDirection);
+
+            let newCurrentPage = currentPage;
             if (direction === 'next') {
                 newCurrentPage++;
-                newPageFirstDocs.push(pageData.firstVisible);
             } else if (direction === 'prev' && newCurrentPage > 1) {
                 newCurrentPage--;
-                newPageFirstDocs.pop();
+            } else if (direction === 'first') {
+                newCurrentPage = 1;
             }
-            newFirstVisible = pageData.firstVisible;
-            newLastVisible = pageData.lastVisible;
-        }
-        
-        const deleteHandler = createDeleteCardHandler(
-            userId, collectionId, appId, decks, pageData.cards, 
-            () => {
-                fetchAndRenderCollectionPage('current', userId, collectionId, cardsPerPage, newPageFirstDocs, lastVisible, newCurrentPage, activeFilters, activeLang, onSuccess, onError, appId, decks, searchResults);
-            },
-            onError,
-            activeLang
-        );
-        
-        renderTable(pageData.cards, activeFilters, activeLang, 
-            (e, uniqueId) => handleSetChange(e, uniqueId, userId, collectionId, 
-                (updatedCard) => {
-                    const resultIndex = pageData.cards.findIndex(r => r.id === uniqueId);
-                    if (resultIndex > -1) {
-                        pageData.cards[resultIndex].result = updatedCard;
-                    }
-                    calculateAndDisplayTotalValue(userId, collectionId, appId, activeLang, () => {}, () => {});
+
+            const startIndex = (newCurrentPage - 1) * cardsPerPage;
+            const endIndex = startIndex + cardsPerPage;
+            const paginatedCards = filteredCards.slice(startIndex, endIndex);
+
+            const deleteHandler = createDeleteCardHandler(userId, collectionId, appId, decks, allCards, 
+                () => {
+                    fetchAndRenderCollectionPage('first', userId, collectionId, cardsPerPage, [], null, 1, activeFilters, activeLang, onSuccess, onError, appId, decks, [], searchTerm, sortColumn, sortDirection);
                 },
-                (error) => console.error("Error updating card set:", error)
-            ),
-            deleteHandler,
-            newCurrentPage, cardsPerPage
-        );
+                onError,
+                activeLang
+            );
+
+            renderTable(paginatedCards, activeFilters, activeLang, 
+                (e, uniqueId) => handleSetChange(e, uniqueId, userId, collectionId, 
+                    (updatedCard) => {
+                        const resultIndex = paginatedCards.findIndex(r => r.id === uniqueId);
+                        if (resultIndex > -1) paginatedCards[resultIndex].result = updatedCard;
+                        calculateAndDisplayTotalValue(userId, collectionId, appId, activeLang, () => {}, () => {});
+                    },
+                    (error) => console.error("Error updating card set:", error)
+                ),
+                deleteHandler,
+                newCurrentPage, cardsPerPage
+            );
+
+            const hasMore = endIndex < filteredCards.length;
+            updatePaginationUI(paginatedCards.length, newCurrentPage, activeLang, hasMore);
+            
+            onSuccess(paginatedCards);
+
+            return {
+                currentPage: newCurrentPage,
+                pageFirstDocs: [],
+                lastVisible: null,
+                firstVisible: null,
+            };
+
+        } else {
+            // --- Logica originale per la paginazione server-side ---
+            const pageData = await fetchCollectionPage(userId, collectionId, direction, cardsPerPage, pageFirstDocs, lastVisible, '', sortColumn, sortDirection);
         
-        updatePaginationUI(pageData.cards.length, newCurrentPage, activeLang);
-        
-        onSuccess(pageData.cards);
-        
-        return {
-            currentPage: newCurrentPage,
-            pageFirstDocs: newPageFirstDocs,
-            lastVisible: newLastVisible,
-            firstVisible: newFirstVisible
-        };
+            let newCurrentPage = currentPage;
+            let newPageFirstDocs = [...pageFirstDocs];
+            
+            if (pageData.cards.length > 0) {
+                if (direction === 'next') {
+                    newCurrentPage++;
+                    if(pageData.firstVisible) newPageFirstDocs.push(pageData.firstVisible);
+                } else if (direction === 'prev' && newCurrentPage > 1) {
+                    newCurrentPage--;
+                    newPageFirstDocs.pop();
+                } else if (direction === 'first') {
+                    newCurrentPage = 1;
+                    newPageFirstDocs = [null];
+                }
+            }
+            
+            const deleteHandler = createDeleteCardHandler(
+                userId, collectionId, appId, decks, pageData.cards, 
+                () => {
+                    fetchAndRenderCollectionPage('current', userId, collectionId, cardsPerPage, newPageFirstDocs, pageData.lastVisible, newCurrentPage, activeFilters, activeLang, onSuccess, onError, appId, decks, searchResults);
+                },
+                onError,
+                activeLang
+            );
+            
+            renderTable(pageData.cards, activeFilters, activeLang, 
+                (e, uniqueId) => handleSetChange(e, uniqueId, userId, collectionId, 
+                    (updatedCard) => {
+                        const resultIndex = pageData.cards.findIndex(r => r.id === uniqueId);
+                        if (resultIndex > -1) pageData.cards[resultIndex].result = updatedCard;
+                        calculateAndDisplayTotalValue(userId, collectionId, appId, activeLang, () => {}, () => {});
+                    },
+                    (error) => console.error("Error updating card set:", error)
+                ),
+                deleteHandler,
+                newCurrentPage, cardsPerPage
+            );
+            
+            updatePaginationUI(pageData.cards.length, newCurrentPage, activeLang, pageData.hasMore);
+            
+            onSuccess(pageData.cards);
+            
+            return {
+                currentPage: newCurrentPage,
+                pageFirstDocs: newPageFirstDocs,
+                lastVisible: pageData.lastVisible,
+                firstVisible: pageData.firstVisible
+            };
+        }
     } catch (error) {
         console.error("Error fetching collection page:", error);
         onError("Error loading data. Check console for details.");

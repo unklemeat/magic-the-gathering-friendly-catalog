@@ -1,5 +1,5 @@
 import { getTranslation } from './modules/translations.js';
-import { fetchSets, fetchAllPrintsByOracleId, fetchSetCards } from './modules/scryfallApi.js';
+import { fetchSets, fetchAllPrintsByOracleId, fetchSetCards, fetchItalianVersion } from './modules/scryfallApi.js';
 import {
   initializeFirebase, authenticateUser, setupDecksListener,
   addDeck as firebaseAddDeck, updateDeck as firebaseUpdateDeck,
@@ -140,6 +140,7 @@ async function fetchAndRenderSetCards(setCode) {
 async function fetchAndRenderCollectionPageLocal(direction = 'first') {
     if (!state.db || !state.userId || !state.currentCollectionId) return;
     const searchTerm = document.getElementById('collectionFilterInput').value.trim();
+    
     const result = await collectionFetchAndRenderCollectionPage(
         direction, state.userId, state.currentCollectionId, state.cardsPerPage, state.pageFirstDocs, state.lastVisible, state.currentPage, 
         state.activeFilters, state.activeLang,
@@ -171,12 +172,25 @@ async function addCardToCollection(cardData) {
         showModalLocal('modalNoCollections');
         return;
     }
+    
+    // Crea una copia della cardData per evitare di modificarla globalmente
+    const cardToAdd = { ...cardData };
 
-    if (!cardData.cardPrints) {
-        cardData.cardPrints = await fetchAllPrintsByOracleId(cardData.oracle_id);
+    // Cerca la versione italiana usando l'oracle_id della carta (inglese) trovata
+    const italianVersion = await fetchItalianVersion(cardToAdd.oracle_id);
+    if (italianVersion && italianVersion.printed_name) {
+        // Se la versione italiana esiste, aggiungiamo il suo nome al nostro oggetto
+        cardToAdd.printed_name = italianVersion.printed_name;
+    } else {
+        // Altrimenti, ci assicuriamo che printed_name sia null o undefined
+        delete cardToAdd.printed_name;
+    }
+
+    if (!cardToAdd.cardPrints) {
+        cardToAdd.cardPrints = await fetchAllPrintsByOracleId(cardToAdd.oracle_id);
     }
     
-    await collectionAddCardToCollection(cardData, state.userId, collectionId, () => {
+    await collectionAddCardToCollection(cardToAdd, state.userId, collectionId, () => {
         if (collectionId === state.currentCollectionId) {
             fetchAndRenderCollectionPageLocal('first');
             calculateAndDisplayTotalValueLocal();
@@ -312,7 +326,14 @@ const eventHandlers = {
         state.setCardsPerPage(newSize);
         fetchAndRenderCollectionPageLocal('first');
     },
-    onCollectionFilter: () => fetchAndRenderCollectionPageLocal('first'),
+    onCollectionFilter: () => {
+        // Resetta la paginazione prima di una nuova ricerca
+        state.setCurrentPage(1);
+        state.setLastVisible(null);
+        state.setFirstVisible(null);
+        state.setPageFirstDocs([null]);
+        fetchAndRenderCollectionPageLocal('first');
+    },
     onCollectionReset: () => {
         document.getElementById('collectionFilterInput').value = '';
         state.setActiveFilters(clearAllFilters(() => {
@@ -321,11 +342,24 @@ const eventHandlers = {
         fetchAndRenderCollectionPageLocal('first');
     },
     onSort: (column) => {
-        let direction = (state.currentSort.column === column && state.currentSort.direction === 'asc') ? 'desc' : 'asc';
-        state.setCurrentSort({ column, direction });
+        const newDirection = (state.currentSort.column === column && state.currentSort.direction === 'asc') ? 'desc' : 'asc';
+        state.setCurrentSort({ column, direction: newDirection });
+
+        // **CRUCIAL FIX**
+        // Reset pagination state completely before fetching sorted data.
+        state.setCurrentPage(1);
+        state.setLastVisible(null);
+        state.setFirstVisible(null);
+        state.setPageFirstDocs([null]);
+
+        // Update sort icon in the UI
         document.querySelectorAll('.sort-icon').forEach(icon => icon.className = 'sort-icon');
         const icon = document.querySelector(`[data-sort="${column}"] .sort-icon`);
-        if (icon) icon.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+        if (icon) {
+            icon.classList.add(newDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+        }
+        
+        // Fetch the first page of the newly sorted data
         fetchAndRenderCollectionPageLocal('first');
     },
     onColorFilterChange: () => fetchAndRenderCollectionPageLocal('first'),
