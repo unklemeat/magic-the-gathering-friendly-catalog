@@ -14,18 +14,6 @@ export function updateUI(lang) {
     });
 }
 
-export function updateApiStatus(status, messageKey, activeLang) {
-    const statusIcon = document.getElementById('statusIcon');
-    if (statusIcon) {
-        statusIcon.className = 'w-3 h-3 rounded-full';
-        if (status === 'ready') statusIcon.classList.add('bg-emerald-500');
-        else if (status === 'error') statusIcon.classList.add('bg-red-500');
-        else statusIcon.classList.add('bg-yellow-500', 'animate-pulse');
-    }
-    const statusBtn = document.getElementById('statusBtn');
-    if (statusBtn) statusBtn.textContent = getTranslation('apiStatusBtn', activeLang);
-}
-
 export function showSearchResultsModal(cards, onCardSelect) {
     const modal = document.getElementById('cardSelectionModal');
     const grid = document.getElementById('cardSelectionGrid');
@@ -45,16 +33,24 @@ export function showSearchResultsModal(cards, onCardSelect) {
     modal.classList.remove('hidden');
 }
 
-export function showCardDetailsModal(card, onAddToCollection) {
+export function showCardDetailsModal(card, onAddToCollection, showAddButton = false) {
     const modal = document.getElementById('cardDetailsModal');
     const imageUrl = card.image_uris?.large || card.image_uris?.normal || `https://placehold.co/400x600/E5E7EB/9CA3AF?text=N/A`;
     document.getElementById('cardImageContainer').innerHTML = `<img src="${imageUrl}" alt="${card.name}" class="w-full h-auto rounded-lg">`;
     document.getElementById('cardNameInModal').textContent = card.printed_name || card.name;
     document.getElementById('cardDescriptionInModal').innerHTML = `<p><strong>Mana Cost:</strong> ${card.mana_cost || 'N/A'}</p><p><strong>Type:</strong> ${card.type_line || 'N/A'}</p><p><strong>Set:</strong> ${card.set_name || 'N/A'}</p><p><strong>Rarity:</strong> ${card.rarity || 'N/A'}</p>${card.oracle_text ? `<p class="mt-2"><strong>Text:</strong> ${card.oracle_text}</p>` : ''}`;
-    document.getElementById('addToCollectionBtn').onclick = () => {
-        onAddToCollection(card);
-        modal.classList.add('hidden');
-    };
+    
+    const addToCollectionBtn = document.getElementById('addToCollectionBtn');
+    if (showAddButton) {
+        addToCollectionBtn.classList.remove('hidden');
+        addToCollectionBtn.onclick = () => {
+            onAddToCollection(card);
+            modal.classList.add('hidden');
+        };
+    } else {
+        addToCollectionBtn.classList.add('hidden');
+    }
+    
     modal.classList.remove('hidden');
 }
 
@@ -92,6 +88,17 @@ export function showDeleteConfirmModal(message, lang, onEverywhere, onCollection
     const cancelBtn = document.getElementById('deleteCancelBtn');
     cancelBtn.textContent = getTranslation('cancelBtn', lang);
     cancelBtn.onclick = () => modal.classList.add('hidden');
+    
+    modal.classList.remove('hidden');
+}
+
+export function showImportConfirmModal(collectionName, lang, onMerge, onOverwrite) {
+    const modal = document.getElementById('importConfirmModal');
+    document.getElementById('importModalMessage').textContent = getTranslation('modalImportConflictText', lang, { ':NAME:': collectionName });
+    
+    document.getElementById('importMergeBtn').onclick = () => { onMerge(); modal.classList.add('hidden'); };
+    document.getElementById('importOverwriteBtn').onclick = () => { onOverwrite(); modal.classList.add('hidden'); };
+    document.getElementById('importCancelBtn').onclick = () => modal.classList.add('hidden');
     
     modal.classList.remove('hidden');
 }
@@ -142,7 +149,7 @@ export function addRow(data, uniqueId, onSetChange, onDelete, activeLang = 'ita'
     selectEl.addEventListener('change', (e) => onSetChange(e, uniqueId));
     newRow.querySelector('.delete-btn').addEventListener('click', () => onDelete(uniqueId));
     // Modifica: usa onclick per poterlo sovrascrivere facilmente
-    newRow.querySelector('.details-btn').onclick = () => showCardDetailsModal(data, () => {});
+    newRow.querySelector('.details-btn').onclick = () => showCardDetailsModal(data, () => {}, false);
 }
 
 export function renderTable(searchResults, activeFilters, activeLang, onSetChange, onDelete, currentPage, cardsPerPage) {
@@ -237,4 +244,36 @@ export function toggleProgress(show) {
 
 export function updateProgressText(text) {
     document.getElementById("progressText").textContent = text;
+}
+
+export function renderCollectionsDropdown(collections, currentCollectionId, elementId) {
+    const select = document.getElementById(elementId);
+    if (!select) return;
+    select.innerHTML = '';
+    collections.forEach(collection => {
+        const option = document.createElement('option');
+        option.value = collection.id;
+        option.textContent = collection.name;
+        if (collection.id === currentCollectionId) {
+            option.selected = true;
+        }
+        select.appendChild(option);
+    });
+}
+
+export function showCollectionSelectionModal(collections, onSelect) {
+    const modal = document.getElementById('collectionSelectionModal');
+    const list = document.getElementById('collectionList');
+    list.innerHTML = '';
+    collections.forEach(collection => {
+        const button = document.createElement('button');
+        button.className = 'w-full text-left p-2 rounded-lg hover:bg-gray-100';
+        button.textContent = collection.name;
+        button.onclick = () => {
+            onSelect(collection.id);
+            modal.classList.add('hidden');
+        };
+        list.appendChild(button);
+    });
+    modal.classList.remove('hidden');
 }

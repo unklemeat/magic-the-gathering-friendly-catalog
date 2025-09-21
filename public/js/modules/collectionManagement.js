@@ -35,12 +35,13 @@ import {
  * Add a card to the collection
  * @param {Object} cardData - Card data to add
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {Function} onSuccess - Callback for successful addition
  * @param {Function} onError - Callback for errors
  */
-export async function addCardToCollection(cardData, userId, onSuccess, onError) {
+export async function addCardToCollection(cardData, userId, collectionId, onSuccess, onError) {
     try {
-        const success = await firebaseAddCardToCollection(userId, cardData);
+        const success = await firebaseAddCardToCollection(userId, collectionId, cardData);
         if (success) {
             console.log("Card added to Firestore collection:", cardData.name);
             onSuccess();
@@ -58,12 +59,13 @@ export async function addCardToCollection(cardData, userId, onSuccess, onError) 
  * Delete a card from the collection
  * @param {string} cardId - Card ID to delete
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {Function} onSuccess - Callback for successful deletion
  * @param {Function} onError - Callback for errors
  */
-export async function deleteCardFromCollection(cardId, userId, onSuccess, onError) {
+export async function deleteCardFromCollection(cardId, userId, collectionId, onSuccess, onError) {
     try {
-        await removeCardFromCollection(userId, cardId);
+        await removeCardFromCollection(userId, collectionId, cardId);
         onSuccess();
     } catch (error) {
         console.error("Error deleting card from collection:", error);
@@ -75,6 +77,7 @@ export async function deleteCardFromCollection(cardId, userId, onSuccess, onErro
  * Fetch and render a page of the collection
  * @param {string} direction - Direction for pagination ('first', 'next', 'prev')
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {number} cardsPerPage - Number of cards per page
  * @param {Array} pageFirstDocs - Array of first documents for each page
  * @param {Object} lastVisible - Last visible document for pagination
@@ -85,11 +88,11 @@ export async function deleteCardFromCollection(cardId, userId, onSuccess, onErro
  * @param {Function} onError - Callback for errors
  * @returns {Object} Updated pagination state
  */
-export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError, appId = null, decks = [], searchResults = [], searchTerm = '', sortColumn = null, sortDirection = 'asc') {
+export async function fetchAndRenderCollectionPage(direction, userId, collectionId, cardsPerPage, pageFirstDocs, lastVisible, currentPage, activeFilters, activeLang, onSuccess, onError, appId = null, decks = [], searchResults = [], searchTerm = '', sortColumn = null, sortDirection = 'asc') {
     toggleProgress(true);
     
     try {
-        const pageData = await fetchCollectionPage(userId, direction, cardsPerPage, pageFirstDocs, lastVisible, searchTerm, sortColumn, sortDirection);
+        const pageData = await fetchCollectionPage(userId, collectionId, direction, cardsPerPage, pageFirstDocs, lastVisible, searchTerm, sortColumn, sortDirection);
         
         let newCurrentPage = currentPage;
         let newPageFirstDocs = [...pageFirstDocs];
@@ -109,22 +112,22 @@ export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPa
         }
         
         const deleteHandler = createDeleteCardHandler(
-            userId, appId, decks, pageData.cards, 
+            userId, collectionId, appId, decks, pageData.cards, 
             () => {
-                fetchAndRenderCollectionPage('current', userId, cardsPerPage, newPageFirstDocs, lastVisible, newCurrentPage, activeFilters, activeLang, onSuccess, onError, appId, decks, searchResults);
+                fetchAndRenderCollectionPage('current', userId, collectionId, cardsPerPage, newPageFirstDocs, lastVisible, newCurrentPage, activeFilters, activeLang, onSuccess, onError, appId, decks, searchResults);
             },
             onError,
             activeLang
         );
         
         renderTable(pageData.cards, activeFilters, activeLang, 
-            (e, uniqueId) => handleSetChange(e, uniqueId, userId, 
+            (e, uniqueId) => handleSetChange(e, uniqueId, userId, collectionId, 
                 (updatedCard) => {
                     const resultIndex = pageData.cards.findIndex(r => r.id === uniqueId);
                     if (resultIndex > -1) {
                         pageData.cards[resultIndex].result = updatedCard;
                     }
-                    calculateAndDisplayTotalValue(userId, appId, activeLang, () => {}, () => {});
+                    calculateAndDisplayTotalValue(userId, collectionId, appId, activeLang, () => {}, () => {});
                 },
                 (error) => console.error("Error updating card set:", error)
             ),
@@ -154,14 +157,15 @@ export async function fetchAndRenderCollectionPage(direction, userId, cardsPerPa
 /**
  * Calculate and display total collection value
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {string} appId - App ID
  * @param {string} activeLang - Current language
  * @param {Function} onSuccess - Callback for successful calculation
  * @param {Function} onError - Callback for errors
  */
-export async function calculateAndDisplayTotalValue(userId, appId, activeLang, onSuccess, onError) {
+export async function calculateAndDisplayTotalValue(userId, collectionId, appId, activeLang, onSuccess, onError) {
     try {
-        const allCards = await getAllCollectionCards(userId);
+        const allCards = await getAllCollectionCards(userId, collectionId);
         await uiCalculateAndDisplayTotalValue(allCards, activeLang);
         onSuccess();
     } catch (error) {
@@ -175,10 +179,11 @@ export async function calculateAndDisplayTotalValue(userId, appId, activeLang, o
  * @param {Event} e - Event object
  * @param {string} uniqueId - Unique card ID
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {Function} onSuccess - Callback for successful update
  * @param {Function} onError - Callback for errors
  */
-export async function handleSetChange(e, uniqueId, userId, onSuccess, onError) {
+export async function handleSetChange(e, uniqueId, userId, collectionId, onSuccess, onError) {
     try {
         const selectedPrintId = e.target.value;
         const parentRow = e.target.closest('tr'); // Ottieni la riga della tabella
@@ -188,7 +193,7 @@ export async function handleSetChange(e, uniqueId, userId, onSuccess, onError) {
             const printToSave = { ...printDataResponse };
             delete printToSave.cardPrints;
             
-            await updateCardInCollection(userId, uniqueId, printToSave);
+            await updateCardInCollection(userId, collectionId, uniqueId, printToSave);
             
             if (parentRow) {
                 const prices = printToSave.prices;
@@ -202,7 +207,7 @@ export async function handleSetChange(e, uniqueId, userId, onSuccess, onError) {
                 // Riassegna l'evento click per il pulsante dei dettagli con i nuovi dati della carta
                 const detailsBtn = parentRow.querySelector('.details-btn');
                 if (detailsBtn) {
-                    detailsBtn.onclick = () => showCardDetailsModal(printToSave, () => {});
+                    detailsBtn.onclick = () => showCardDetailsModal(printToSave, () => {}, false);
                 }
             }
             
@@ -220,6 +225,7 @@ export async function handleSetChange(e, uniqueId, userId, onSuccess, onError) {
  * Handle card deletion with confirmation
  * @param {string} uniqueId - Unique ID of the card to delete
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {string} appId - App ID
  * @param {Array} decks - Array of user decks
  * @param {Array} searchResults - Current search results
@@ -227,7 +233,7 @@ export async function handleSetChange(e, uniqueId, userId, onSuccess, onError) {
  * @param {Function} onError - Callback for errors
  * @param {string} activeLang - Current language
  */
-export async function handleDeleteCard(uniqueId, userId, appId, decks, searchResults, onSuccess, onError, activeLang = 'ita') {
+export async function handleDeleteCard(uniqueId, userId, collectionId, appId, decks, searchResults, onSuccess, onError, activeLang = 'ita') {
     try {
         const cardInCollection = searchResults.find(r => r.id === uniqueId);
         if (!cardInCollection) {
@@ -243,12 +249,12 @@ export async function handleDeleteCard(uniqueId, userId, appId, decks, searchRes
         );
 
         const deleteCardFromCollectionOnly = async () => {
-            await removeCardFromCollection(userId, uniqueId);
+            await removeCardFromCollection(userId, collectionId, uniqueId);
             onSuccess();
         };
         
         const deleteCardFromEverywhere = async () => {
-            await removeCardFromCollection(userId, uniqueId);
+            await removeCardFromCollection(userId, collectionId, uniqueId);
             await firebaseRemoveCardFromAllDecksByOracleId(userId, cardOracleId);
             onSuccess();
         };
@@ -280,6 +286,7 @@ export async function handleDeleteCard(uniqueId, userId, appId, decks, searchRes
 /**
  * Create a delete card handler with the required parameters
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {string} appId - App ID
  * @param {Array} decks - Array of user decks
  * @param {Array} searchResults - Current search results
@@ -288,8 +295,8 @@ export async function handleDeleteCard(uniqueId, userId, appId, decks, searchRes
  * @param {string} activeLang - Current language
  * @returns {Function} Delete handler function
  */
-export function createDeleteCardHandler(userId, appId, decks, searchResults, onSuccess, onError, activeLang = 'ita') {
+export function createDeleteCardHandler(userId, collectionId, appId, decks, searchResults, onSuccess, onError, activeLang = 'ita') {
     return (uniqueId) => {
-        handleDeleteCard(uniqueId, userId, appId, decks, searchResults, onSuccess, onError, activeLang);
+        handleDeleteCard(uniqueId, userId, collectionId, appId, decks, searchResults, onSuccess, onError, activeLang);
     };
 }

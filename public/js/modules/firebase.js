@@ -5,7 +5,7 @@
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs, limit, startAfter, orderBy, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+import { getFirestore, doc, collection, onSnapshot, addDoc, setDoc, updateDoc, deleteDoc, query, getDocs, limit, startAfter, orderBy, where, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getAnalytics } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
 import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 import { getConfig, validateConfig } from './config.js';
@@ -77,16 +77,17 @@ export function authenticateUser(onAuthStateChange) {
 /**
  * Add a card to the user's collection
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {Object} cardData - Card data to save
  * @returns {Promise<boolean>} Success status
  */
-export async function addCardToCollection(userId, cardData) {
-  if (!db || !userId) {
-    console.error("Firebase is not initialized or user is not authenticated.");
+export async function addCardToCollection(userId, collectionId, cardData) {
+  if (!db || !userId || !collectionId) {
+    console.error("Firebase is not initialized, user is not authenticated, or no collection is selected.");
     return false;
   }
   
-  const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+  const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`);
   
   try {
     const cardToSave = { ...cardData };
@@ -103,18 +104,19 @@ export async function addCardToCollection(userId, cardData) {
 /**
  * Update a card in the user's collection
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {string} cardId - Card document ID
  * @param {Object} cardData - Updated card data
  * @returns {Promise<boolean>} Success status
  */
-export async function updateCardInCollection(userId, cardId, cardData) {
-  if (!db || !userId) {
-    console.error("Firebase is not initialized or user is not authenticated.");
+export async function updateCardInCollection(userId, collectionId, cardId, cardData) {
+  if (!db || !userId || !collectionId) {
+    console.error("Firebase is not initialized, user is not authenticated, or no collection is selected.");
     return false;
   }
   
   try {
-    const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, cardId);
+    const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`, cardId);
     await setDoc(cardDocRef, cardData);
     return true;
   } catch (error) {
@@ -126,17 +128,18 @@ export async function updateCardInCollection(userId, cardId, cardData) {
 /**
  * Remove a card from the user's collection
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {string} cardId - Card document ID
  * @returns {Promise<boolean>} Success status
  */
-export async function removeCardFromCollection(userId, cardId) {
-  if (!db || !userId) {
-    console.error("Firebase is not initialized or user is not authenticated.");
+export async function removeCardFromCollection(userId, collectionId, cardId) {
+  if (!db || !userId || !collectionId) {
+    console.error("Firebase is not initialized, user is not authenticated, or no collection is selected.");
     return false;
   }
   
   try {
-    const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collection`, cardId);
+    const cardDocRef = doc(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`, cardId);
     await deleteDoc(cardDocRef);
     return true;
   } catch (error) {
@@ -148,13 +151,14 @@ export async function removeCardFromCollection(userId, cardId) {
 /**
  * Build base collection query with filters
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {string} searchTerm - Search term for filtering
  * @returns {Object|null} Firestore query or null
  */
-export function buildBaseCollectionQuery(userId, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
-  if (!db || !userId) return null;
+export function buildBaseCollectionQuery(userId, collectionId, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
+  if (!db || !userId || !collectionId) return null;
   
-  let q = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+  let q = collection(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`);
   let baseConstraints = [];
 
   if (searchTerm) {
@@ -175,16 +179,17 @@ export function buildBaseCollectionQuery(userId, searchTerm = '', sortColumn = n
 /**
  * Fetch and render collection page with pagination
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {string} direction - 'first', 'next', or 'prev'
  * @param {number} cardsPerPage - Number of cards per page
  * @param {Array} pageFirstDocs - Array of first documents for each page
  * @param {Object} lastVisible - Last visible document for pagination
  * @returns {Promise<Object>} Page data with cards and pagination info
  */
-export async function fetchCollectionPage(userId, direction = 'first', cardsPerPage = 50, pageFirstDocs = [null], lastVisible = null, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
-  if (!db) return { cards: [], hasMore: false, lastVisible: null };
+export async function fetchCollectionPage(userId, collectionId, direction = 'first', cardsPerPage = 50, pageFirstDocs = [null], lastVisible = null, searchTerm = '', sortColumn = null, sortDirection = 'asc') {
+  if (!db || !collectionId) return { cards: [], hasMore: false, lastVisible: null };
   
-  let baseQuery = buildBaseCollectionQuery(userId, searchTerm, sortColumn, sortDirection);
+  let baseQuery = buildBaseCollectionQuery(userId, collectionId, searchTerm, sortColumn, sortDirection);
   let pageQuery;
 
   if (direction === 'first') {
@@ -223,13 +228,14 @@ export async function fetchCollectionPage(userId, direction = 'first', cardsPerP
 /**
  * Get all collection cards (for deck editor)
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @returns {Promise<Array>} Array of collection cards
  */
-export async function getAllCollectionCards(userId) {
-  if (!db || !userId) return [];
+export async function getAllCollectionCards(userId, collectionId) {
+  if (!db || !userId || !collectionId) return [];
   
   try {
-    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collection`)));
+    const collectionSnapshot = await getDocs(query(collection(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`)));
     const cards = collectionSnapshot.docs.map(d => ({ id: d.id, result: d.data() }));
     cards.sort((a, b) => (a.result.name || '').localeCompare(b.result.name || ''));
     return cards;
@@ -477,19 +483,23 @@ export function isFirebaseInitialized() {
 /**
  * Import collection from JSON data
  * @param {string} userId - User ID
+ * @param {string} collectionId - The ID of the collection
  * @param {Array} collectionData - Array of card data
+ * @param {boolean} merge - If true, merges with existing cards instead of overwriting
  * @returns {Promise<boolean>} Success status
  */
-export async function importCollection(userId, collectionData) {
-  if (!db || !userId || !Array.isArray(collectionData)) return false;
+export async function importCollection(userId, collectionId, collectionData, merge = false) {
+  if (!db || !userId || !collectionId || !Array.isArray(collectionData)) return false;
   
   try {
-    const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collection`);
+    const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`);
 
-    // Clear existing collection
-    const existingDocsSnapshot = await getDocs(collectionRef);
-    const deletePromises = existingDocsSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
-    await Promise.all(deletePromises);
+    if (!merge) {
+      // Clear existing collection
+      const existingDocsSnapshot = await getDocs(collectionRef);
+      const deletePromises = existingDocsSnapshot.docs.map(docSnapshot => deleteDoc(docSnapshot.ref));
+      await Promise.all(deletePromises);
+    }
 
     // Add new cards from the imported file
     const addPromises = collectionData.map(cardObject => {
@@ -506,6 +516,68 @@ export async function importCollection(userId, collectionData) {
     console.error("Error importing collection:", error);
     return false;
   }
+}
+
+/**
+ * Set up a real-time listener for user's collections.
+ * @param {string} userId - The user's ID.
+ * @param {Function} onCollectionsChange - Callback function for when collections change.
+ * @returns {Function} Unsubscribe function.
+ */
+export function setupCollectionsListener(userId, onCollectionsChange) {
+    if (!db || !userId) return () => {};
+    const collectionsRef = collection(db, `artifacts/${appId}/users/${userId}/collections`);
+    return onSnapshot(collectionsRef, (snapshot) => {
+        const collectionsData = snapshot.docs.map(doc => ({
+            id: doc.id,
+            ...doc.data()
+        }));
+        onCollectionsChange(collectionsData);
+    });
+}
+
+/**
+ * Create a new collection for a user.
+ * @param {string} userId - The user's ID.
+ * @param {string} name - The name of the new collection.
+ * @returns {Promise<string|null>} The ID of the new collection or null on error.
+ */
+export async function createCollection(userId, name) {
+    if (!db || !userId) return null;
+    try {
+        const collectionsRef = collection(db, `artifacts/${appId}/users/${userId}/collections`);
+        const newCollection = await addDoc(collectionsRef, { name });
+        return newCollection.id;
+    } catch (error) {
+        console.error("Error creating collection:", error);
+        return null;
+    }
+}
+
+/**
+ * Delete a collection and all its cards.
+ * @param {string} userId - The user's ID.
+ * @param {string} collectionId - The ID of the collection to delete.
+ * @returns {Promise<boolean>} Success status.
+ */
+export async function deleteCollection(userId, collectionId) {
+    if (!db || !userId || !collectionId) return false;
+    try {
+        const collectionRef = collection(db, `artifacts/${appId}/users/${userId}/collections/${collectionId}/cards`);
+        const collectionDocs = await getDocs(collectionRef);
+        const batch = writeBatch(db);
+        collectionDocs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        await batch.commit();
+
+        const collectionDocRef = doc(db, `artifacts/${appId}/users/${userId}/collections`, collectionId);
+        await deleteDoc(collectionDocRef);
+        return true;
+    } catch (error) {
+        console.error("Error deleting collection:", error);
+        return false;
+    }
 }
 
 // Re-export Firestore functions for use in other modules

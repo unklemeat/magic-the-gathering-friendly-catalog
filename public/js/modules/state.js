@@ -11,6 +11,9 @@ export let userId;
 export let decks = [];
 export let currentDeck = null;
 export let currentDeckId = null;
+export let collections = [];
+export let currentCollectionId = null;
+export let currentCollectionName = '';
 
 // Pagination state
 export let lastVisible = null;
@@ -21,9 +24,6 @@ export let cardsPerPage = 50;
 
 // Table sorting variables
 export let currentSort = { column: null, direction: 'asc' };
-
-// API status variable
-export let apiStatus = 'connecting';
 
 // --- Setters for state variables ---
 
@@ -87,14 +87,22 @@ export function setCurrentSort(value) {
     currentSort = value;
 }
 
-export function setApiStatus(value) {
-    apiStatus = value;
-}
-
 export function setActiveFilters(value) {
     activeFilters = value;
 }
 
 export function setCurrentCardDetails(value) {
     currentCardDetails = value;
+}
+
+export function setCollections(value) {
+    collections = value;
+}
+
+export function setCurrentCollectionId(value) {
+    currentCollectionId = value;
+}
+
+export function setCurrentCollectionName(value) {
+    currentCollectionName = value;
 }

@@ -136,3 +136,8 @@ body { font-family: 'Inter', sans-serif; }
     max-height: 90vh;
     overflow-y: auto;
   }
+
+  /* Ensure the collection select dropdown is visible */
+  #collectionSelect {
+    min-width: 150px;
+  }

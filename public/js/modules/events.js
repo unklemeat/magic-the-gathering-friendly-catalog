@@ -81,13 +81,6 @@ export function setupEventListeners(handlers) {
         }
     });
 
-    // API status button
-    document.getElementById('statusBtn').addEventListener('click', () => {
-        if (handlers.onStatusClick) {
-            handlers.onStatusClick();
-        }
-    });
-
     // Search functionality
     document.getElementById('cardNameInput').addEventListener('keydown', (event) => {
         if (event.key === 'Enter') {
@@ -249,6 +242,32 @@ export function setupEventListeners(handlers) {
     document.getElementById('lang-select').addEventListener('change', (e) => {
         if (handlers.onLanguageChange) {
             handlers.onLanguageChange(e.target.value);
+        }
+    });
+    
+    // Collection management
+    document.getElementById('createCollectionBtn').addEventListener('click', () => {
+        if (handlers.onCreateCollection) {
+            handlers.onCreateCollection();
+        }
+    });
+
+    document.getElementById('deleteCollectionBtn').addEventListener('click', () => {
+        if (handlers.onDeleteCollection) {
+            handlers.onDeleteCollection();
+        }
+    });
+
+    document.getElementById('collectionSelect').addEventListener('change', (e) => {
+        if (handlers.onCollectionChange) {
+            handlers.onCollectionChange(e);
+        }
+    });
+    
+    // Logout
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+        if (handlers.onLogout) {
+            handlers.onLogout();
         }
     });
 }
